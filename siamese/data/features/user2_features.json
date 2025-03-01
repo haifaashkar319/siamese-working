@@ -1,0 +1,44 @@
+[
+    {
+        "session_time": "2025-02-23T14:57:54.241451",
+        "features": {
+            "avg_flight_time": 0.2092544916322676,
+            "std_flight_time": 0.1719383277784733,
+            "median_flight_time": 0.15298521518707275,
+            "min_flight_time": 0.0,
+            "max_flight_time": 0.978787899017334,
+            "avg_dwell_time": 12.66201788407785,
+            "std_dwell_time": 11.599168982439684,
+            "total_pauses": 21,
+            "avg_pause_duration": 1.7309005033402216
+        }
+    },
+    {
+        "session_time": "2025-02-23T15:01:43.148495",
+        "features": {
+            "avg_flight_time": 0.20743493558996814,
+            "std_flight_time": 0.1637393914127021,
+            "median_flight_time": 0.15022647380828857,
+            "min_flight_time": 0.0,
+            "max_flight_time": 0.9708249568939209,
+            "avg_dwell_time": 17.283535426662816,
+            "std_dwell_time": 25.556801062576646,
+            "total_pauses": 24,
+            "avg_pause_duration": 2.009654770294825
+        }
+    },
+    {
+        "session_time": "2025-02-23T19:42:26.468901",
+        "features": {
+            "avg_flight_time": 0.20414959567094806,
+            "std_flight_time": 0.16317222653367036,
+            "median_flight_time": 0.14400768280029297,
+            "min_flight_time": 0.0,
+            "max_flight_time": 0.9559893608093262,
+            "avg_dwell_time": 10.754463016986847,
+            "std_dwell_time": 13.092170558133082,
+            "total_pauses": 7,
+            "avg_pause_duration": 1.0728929042816162
+        }
+    }
+]

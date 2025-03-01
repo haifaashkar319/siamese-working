@@ -1,0 +1,132 @@
+"""
+Siamese neural network module for keystroke authentication.
+"""
+
+import tensorflow as tf
+from tensorflow.keras import layers, Model, Input
+
+
+class SiameseNetwork:
+    """
+    A Siamese Network for comparing keystroke dynamics feature vectors.
+    """
+
+    def __init__(self, base_model, head_model):
+        """
+        Constructs the Siamese model.
+
+        Structure:
+        -------------------------------------------------------------------
+        input1 -> base_model |
+                             --> embedding --> head_model --> binary output
+        input2 -> base_model |
+        -------------------------------------------------------------------
+
+        :param base_model: The embedding model (converts input to feature representation).
+        :param head_model: The comparator model (determines similarity between two embeddings).
+        """
+        self.base_model = base_model
+        self.head_model = head_model
+        self.input_shape = self.base_model.input_shape[1:]
+
+        # Initialize the Siamese model
+        self.siamese_model = None
+        self.__initialize_siamese_model()
+
+    def compile(self, *args, **kwargs):
+        """
+        Configures the model for training.
+        Passes all arguments to the underlying Keras model compile function.
+        """
+        self.siamese_model.compile(*args, **kwargs)
+
+    def fit(self, x_train, y_train, batch_size, validation_data, **kwargs):
+        """
+        Trains the model using keystroke feature pairs.
+
+        :param x_train: Feature pairs (two feature vectors per sample).
+        :param y_train: Labels (1 = same person, 0 = different people).
+        :param batch_size: Batch size for training.
+        :param validation_data: Validation dataset (X_test, Y_test).
+        """
+        x_test, y_test = validation_data
+        self.siamese_model.fit([x_train[:, 0], x_train[:, 1]], y_train,
+                               batch_size=batch_size,
+                               validation_data=([x_test[:, 0], x_test[:, 1]], y_test),
+                               **kwargs)
+
+    def evaluate(self, x, y, batch_size, **kwargs):
+        """
+        Evaluates the Siamese network.
+
+        :param x: Feature pairs (two feature vectors per sample).
+        :param y: Labels (1 = same person, 0 = different people).
+        :param batch_size: Batch size for evaluation.
+        :return: Evaluation results.
+        """
+        return self.siamese_model.evaluate([x[:, 0], x[:, 1]], y, batch_size=batch_size, **kwargs)
+
+    def predict(self, x):
+        """
+        Predicts the similarity score between two keystroke feature vectors.
+
+        :param x: Feature pair (two feature vectors).
+        :return: Similarity score (0 = different, 1 = identical).
+        """
+        return self.siamese_model.predict([x[:, 0], x[:, 1]])
+
+    def load_weights(self, checkpoint_path):
+        """
+        Load trained weights into the Siamese network.
+
+        :param checkpoint_path: Path to the checkpoint file.
+        """
+        self.siamese_model.load_weights(checkpoint_path)
+
+    def __initialize_siamese_model(self):
+        """
+        Initializes the Siamese Network using the base and head models.
+        """
+        input_a = Input(shape=self.input_shape)
+        input_b = Input(shape=self.input_shape)
+
+        processed_a = self.base_model(input_a)
+        processed_b = self.base_model(input_b)
+
+        head = self.head_model([processed_a, processed_b])
+        self.siamese_model = Model([input_a, input_b], head)
+
+
+def create_base_network(input_shape):
+    """
+    Creates the base network that transforms raw keystroke feature vectors into embeddings.
+    
+    :param input_shape: Shape of input feature vectors.
+    :return: Keras Model.
+    """
+    model = tf.keras.Sequential([
+        layers.Dense(128, activation='relu', input_shape=input_shape),
+        layers.BatchNormalization(),
+        layers.Dense(64, activation='relu'),
+        layers.Dense(32, activation='relu')
+    ])
+    return model
+
+
+def create_head_model(embedding_shape):
+    """
+    Creates the head model that compares two feature embeddings.
+    
+    :param embedding_shape: Shape of feature embeddings.
+    :return: Keras Model.
+    """
+    embedding_a = Input(shape=(embedding_shape[-1],))  # Ensure correct shape
+    embedding_b = Input(shape=(embedding_shape[-1],))  # Ensure correct shape
+
+    # Compute Absolute Difference (No Reshaping Needed)
+    l1_distance = layers.Lambda(lambda tensors: tf.abs(tensors[0] - tensors[1]))([embedding_a, embedding_b])
+
+    # Final Similarity Score
+    output = layers.Dense(1, activation='sigmoid')(l1_distance)
+
+    return Model([embedding_a, embedding_b], output)
