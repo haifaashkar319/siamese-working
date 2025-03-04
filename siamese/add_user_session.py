@@ -1,59 +1,82 @@
-import pandas as pd
-import time
 import csv
 import os
+import time
+from pynput import keyboard  # To listen for keystrokes
 
 # Define the dataset file
 file_path = "free-text (1).csv"
 
 def record_keystrokes():
     """
-    Records keystroke data for a new user session.
-    The user will type about 200 words, and timestamps will be recorded.
+    Records individual keystrokes with timestamps and latencies.
+    Stops after 1000 key presses.
     """
     user_id = input("Enter your user ID (e.g., p101, p102, etc.): ").strip()
     session_number = input("Enter session number (1 or 2): ").strip()
     
-    print("\nStart typing... (type about 200 words). Press 'Enter' when done.\n")
-    
-    # Initialize keystroke data storage
-    keystrokes = []
-    start_time = time.time()  # Start timestamp
-    
-    try:
-        while True:
-            key = input("")  # Capture input (simulate real typing session)
-            if key.lower() == "exit":  # Stop when user types 'exit'
-                break
-            timestamp = time.time() - start_time  # Calculate relative time
-            keystrokes.append([user_id, session_number, key, timestamp])
-            
-            # Stop recording after approx 200 words
-            if len(keystrokes) >= 200:
-                print("\n✅ Typing session complete. Saving data...\n")
-                break
-                
-    except KeyboardInterrupt:
-        print("\nSession interrupted. Saving recorded data...\n")
+    print("\nStart typing... Press 'Esc' to stop.\n")
 
-    # Save to CSV file
-    save_to_csv(keystrokes)
+    keystrokes = []
+    start_time = time.time()  # Start absolute timestamp
+    last_timestamp = None  # Track previous keypress time
+    key_count = 0  # Stop at 1000 key presses
+
+    def on_press(key):
+        nonlocal last_timestamp, key_count
+
+        if key == keyboard.Key.esc:  # Stop when 'Esc' is pressed
+            print("\n✅ Typing session complete. Saving data...\n")
+            save_to_csv(keystrokes)
+            return False
+
+        # Convert key into a readable format
+        if isinstance(key, keyboard.Key):  # Special keys
+            key_name = key.name.capitalize()  # Example: "Space", "Enter"
+        else:
+            key_name = key.char  # Regular character keys
+
+        # Compute timestamps
+        timestamp = time.time()
+        abs_time = round(timestamp - start_time, 3)
+
+        # First key should have 0 latency
+        if last_timestamp is None:
+            latency = 0.000  # First key has no previous keystroke
+        else:
+            latency = round(timestamp - last_timestamp, 3)
+
+        # Append the keystroke data
+        keystrokes.append([user_id, session_number, key_name, latency, abs_time])
+
+        last_timestamp = timestamp  # Update last press time
+        key_count += 1
+
+        if key_count >= 1000:
+            print("\n✅ Keystroke limit reached (1000 keys). Saving data...\n")
+            save_to_csv(keystrokes)
+            return False  # Stop listener
+
+    # Listen for keystrokes
+    with keyboard.Listener(on_press=on_press) as listener:
+        listener.join()
 
 def save_to_csv(data):
     """
     Appends the new keystroke session to the existing dataset.
+    Fixes the issue where new participant rows were merging into the previous row.
     """
     file_exists = os.path.exists(file_path)
-    
+
     with open(file_path, mode="a", newline="") as file:
-        writer = csv.writer(file)
+        writer = csv.writer(file, lineterminator="\n")  # Ensure proper new lines
         
         # Write header if file is new
         if not file_exists:
-            writer.writerow(["participant", "session", "key1", "Timestamp"])
-        
-        # Write new keystroke data
-        writer.writerows(data)
+            writer.writerow(["participant", "session", "key", "latency", "absolute_time"])
+
+        # Write keystroke data row by row
+        for row in data:
+            writer.writerow(row)  # Explicitly writing a new line for each row
 
     print(f"✅ Session data saved to {file_path}")
 
