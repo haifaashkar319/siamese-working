@@ -1,144 +1,124 @@
-# Siamese Neural Network for Keras
+# **Keystroke & Mouse Dynamics Authentication - README**
 
-This project provides a lightweight, easy to use and flexible siamese neural network module for use with the Keras 
-framework. 
+## **📌 Overview**
+This project is a **Siamese Neural Network** for **keystroke & mouse dynamics authentication**. The model learns unique user typing and mouse movement behaviors to verify identity.
 
-Siamese neural networks are used to generate embeddings that describe inter and extra class relationships. 
-This makes Siamese Networks like many other similarity learning algorithms suitable as a pre-training step for many 
-classification problems.
+---
 
-An example of the siamese network module being used to produce a noteworthy 99.85% validation performance on the MNIST 
-dataset with no data augmentation and minimal modification from the Keras example is provided.
-
-## Installation
-
-Create and activate a virtual environment for the project.
+## **📌 Setup & Installation**
+### ✅ **1. Clone the Repository**
 ```sh
-$ virtualenv env
-$ source env/bin/activate
+git clone https://github.com/haifaashkar319/siamese-working.git
+cd siamese-git-rep/siamese
 ```
 
-To install the module directly from GitHub:
-```
-$ pip install git+https://github.com/aspamers/siamese
-```
-
-The module will install keras and numpy but no back-end (like tensorflow). This is deliberate since it leaves the module 
-decoupled from any back-end and gives you a chance to install whatever backend you prefer. 
-
-To install tensorflow:
-```
-$ pip install tensorflow
-```
-
-To install tensorflow with gpu support:
-```
-$ pip install tensorflow-gpu
-```
-
-## To run examples
-
-With the activated virtual environment with the installed python package run the following commands.
-
-To run the mnist baseline example:
-```
-$ python mnist_example.py
-```
-
-To run the mnist siamese pretrained example:
-```
-$ python mnist_siamese_example.py
-```
-
-## Usage
-For detailed usage examples please refer to the examples and unit test modules. If the instructions are not sufficient 
-feel free to make a request for improvements.
-
-- Import the module
-```python
-from siamese import SiameseNetwork
-```
-
-- Load or generate some data.
-```python
-x_train = np.random.rand(100, 3)
-y_train = np.random.randint(num_classes, size=100)
-
-x_test = np.random.rand(30, 3)
-y_test = np.random.randint(num_classes, size=30)
-```
-
-- Design a base model
-```python
-def create_base_model(input_shape):
-    model_input = Input(shape=input_shape)
-    embedding = Flatten()(model_input)
-    embedding = Dense(128)(embedding)
-    return Model(model_input, embedding)
-```
-
-- Design a head model
-```python
-def create_head_model(embedding_shape):
-    embedding_a = Input(shape=embedding_shape)
-    embedding_b = Input(shape=embedding_shape)
-    
-    head = Concatenate()([embedding_a, embedding_b])
-    head = Dense(4)(head)
-    head = BatchNormalization()(head)
-    head = Activation(activation='sigmoid')(head)
-
-    head = Dense(1)(head)
-    head = BatchNormalization()(head)
-    head = Activation(activation='sigmoid')(head)
-
-    return Model([embedding_a, embedding_b], head)
-```
-- Create an instance of the SiameseNetwork class
-```python
-base_model = create_base_model(input_shape)
-head_model = create_head_model(base_model.output_shape)
-siamese_network = SiameseNetwork(base_model, head_model)
-```
-
-- Compile the model
-```python
-siamese_network.compile(loss='binary_crossentropy', optimizer=keras.optimizers.adam())
-```
-
-- Train the model
-```python
-siamese_network.fit(x_train, y_train,
-                    validation_data=(x_test, y_test),
-                    batch_size=64,
-                    epochs=epochs)
-```
-
-## Development Environment
-Create and activate a test virtual environment for the project.
+### ✅ **2. Create a Virtual Environment**
 ```sh
-$ virtualenv env
-$ source env/bin/activate
+python -m venv venv
+source venv/bin/activate  # macOS/Linux
+venv\Scripts\activate    # Windows
 ```
 
-Install requirements
+### ✅ **3. Install Dependencies**
 ```sh
-$ pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
-Install the backend of your choice.
-```
-$ pip install tensorflow
-```
-
-Run tests
+### ✅ **4. Install Additional Libraries (If Needed)**
 ```sh
-$ pytest tests/test_siamese.py
+pip install tensorflow pandas numpy matplotlib keyboard pynput
 ```
 
-## Development container
-To set up the vscode development container follow the instructions at the link provided:
-https://github.com/aspamers/vscode-devcontainer
+---
 
-You will also need to install the nvidia docker gpu passthrough layer:
-https://github.com/NVIDIA/nvidia-docker
+## **📌 Data Collection** **(UNDER CONSTRUCTION)**
+### **1. Collect Keystroke & Mouse Data**
+Run the script to record **keystroke and mouse movement dynamics**:
+```sh
+python data_collection.py
+```
+- **User enters their ID (e.g., `p101`).**
+- **User types a passage (~200 words).**
+- **Mouse movements & clicks are tracked.**
+- **Data is saved in `free-text (1).csv`.**
+
+---
+
+## **📌 Data Preprocessing**
+To extract features from raw typing & mouse data, run:
+```sh
+python data_loader.py
+```
+- Converts raw **timestamps** into **feature vectors**.
+- Generates **training pairs** for the Siamese network.
+- Stores processed data for model training.
+
+---
+
+## **📌 Training the Siamese Network**
+Once data preprocessing is complete, train the model:
+```sh
+python mnist_siamese_example.py
+```
+- Splits **train/test data (80/20)**.
+- Trains for **20 epochs**.
+- Saves the final model as `models/siamese_model.h5`.
+
+---
+
+## **📌 Running Authentication Tests**
+To test authentication by comparing live keystrokes & mouse dynamics:
+```sh
+python test_authentication.py
+```
+- **User enters a test phrase**.
+- **The model compares the new sample to stored sessions**.
+- **Outputs a similarity score (0-1) and authentication decision**.
+
+---
+
+## **📌 Customizing the Model**
+### **Modify Training Parameters**
+Edit `mnist_siamese_example.py`:
+```python
+siamese_network.fit(X_train_data, Y_train_data,
+                    batch_size=32, epochs=20,
+                    validation_data=(X_val_data, Y_val_data))
+```
+- Increase `epochs` for better accuracy.
+- Adjust `batch_size` for performance tuning.
+
+### **Change Decision Threshold for Authentication**
+Modify `test_authentication.py`:
+```python
+threshold = 0.75  # Adjust to balance false positives & false negatives
+if similarity_score > threshold:
+    print("✅ User authenticated.")
+else:
+    print("❌ Authentication failed.")
+```
+
+---
+
+## **📌 Future Improvements**
+🔹 **Enhance Feature Extraction:** Add **dwell time, click speed, and trajectory analysis**.
+🔹 **Optimize Model Performance:** Tune **dropout, batch size, and learning rate decay**.
+🔹 **Deploy as an API:** Create a **Flask/FastAPI-based authentication system**.
+
+---
+
+## **📌 Troubleshooting**
+### **Common Issues & Fixes**
+| **Issue** | **Possible Cause** | **Solution** |
+|---------|------------------|------------|
+| Model not training well | Small dataset | Collect more sessions per user |
+| Low accuracy | Threshold too strict/loose | Test different thresholds (0.5 - 0.9) |
+| `ModuleNotFoundError` | Missing dependencies | Run `pip install -r requirements.txt` |
+
+---
+
+## **📌 Contact & Contribution**
+💡 **Found a bug or have suggestions?** Open an issue or contribute via **pull requests**!
+
+🚀 **Happy coding!**
+

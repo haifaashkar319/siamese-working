@@ -31,14 +31,14 @@ def extract_features_from_csv(df, split_factor=2):
             flight_times = np.diff(mini_timestamps)  # Compute keystroke timing features
             
             feature_vector = {
-                "avg_flight_time": np.mean(flight_times) if len(flight_times) > 0 else 0,
-                "std_flight_time": np.std(flight_times) if len(flight_times) > 0 else 0,
-                "median_flight_time": np.median(flight_times) if len(flight_times) > 0 else 0,
-                "min_flight_time": np.min(flight_times) if len(flight_times) > 0 else 0,
-                "max_flight_time": np.max(flight_times) if len(flight_times) > 0 else 0,
-                "total_keystrokes": len(mini_timestamps),
-                "typing_speed": len(mini_timestamps) / (mini_timestamps[-1] - mini_timestamps[0]) if len(mini_timestamps) > 1 else 0
-            }
+            "avg_flight_time": np.mean(flight_times) if len(flight_times) > 0 else 0,
+            "std_flight_time": np.std(flight_times) if len(flight_times) > 0 else 0,
+            "median_flight_time": np.median(flight_times) if len(flight_times) > 0 else 0,
+            "min_flight_time": np.min(flight_times) if len(flight_times) > 0 else 0,
+            "max_flight_time": np.max(flight_times) if len(flight_times) > 0 else 0,
+            "total_keystrokes": len(timestamps),
+            "typing_speed": len(timestamps) / (timestamps[-1] - timestamps[0]) if len(timestamps) > 1 else 0
+        }
             
             # Store mini-session as a new session
             session_key = f"{participant}_session{session}_part{split_index+1}"

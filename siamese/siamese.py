@@ -2,9 +2,11 @@
 Siamese neural network module for keystroke authentication.
 """
 
+from tensorflow.keras.layers import Input, Dense, Lambda
+from tensorflow.keras.models import Model
+import tensorflow.keras.backend as K
 import tensorflow as tf
-from tensorflow.keras import layers, Model, Input
-
+from tensorflow.keras import layers
 
 class SiameseNetwork:
     """
@@ -116,17 +118,21 @@ def create_base_network(input_shape):
 def create_head_model(embedding_shape):
     """
     Creates the head model that compares two feature embeddings.
-    
+
     :param embedding_shape: Shape of feature embeddings.
     :return: Keras Model.
     """
-    embedding_a = Input(shape=(embedding_shape[-1],))  # Ensure correct shape
-    embedding_b = Input(shape=(embedding_shape[-1],))  # Ensure correct shape
+    embedding_a = Input(shape=(embedding_shape[-1],))  
+    embedding_b = Input(shape=(embedding_shape[-1],))  
 
-    # Compute Absolute Difference (No Reshaping Needed)
-    l1_distance = layers.Lambda(lambda tensors: tf.abs(tensors[0] - tensors[1]))([embedding_a, embedding_b])
+    # 🔹 Define the Lambda function with explicit output shape
+    def l1_distance(vectors):
+        x, y = vectors
+        return K.abs(x - y)
 
-    # Final Similarity Score
-    output = layers.Dense(1, activation='sigmoid')(l1_distance)
+    distance = Lambda(l1_distance, output_shape=lambda input_shape: input_shape[0])([embedding_a, embedding_b])
+
+    # 🔹 Final similarity score
+    output = Dense(1, activation='sigmoid')(distance)
 
     return Model([embedding_a, embedding_b], output)
