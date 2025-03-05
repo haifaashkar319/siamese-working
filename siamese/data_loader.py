@@ -5,41 +5,42 @@ from collections import Counter, defaultdict
 import os
 file_path = os.path.join(os.path.dirname(__file__), "FreeDB.csv")
 df = pd.read_csv(file_path, low_memory=False)  # Do NOT use dtype={"DU.key1.key1": "float"}
+
+print("🔍 Checking missing values in dataset:")
+print(df.isna().sum())  # Count missing values per column
+
 df["DU.key1.key1"] = pd.to_numeric(df["DU.key1.key1"], errors="coerce")
 df = df.dropna(subset=["DU.key1.key1"])
 df.columns = df.columns.str.strip()
 
-print(df.columns)
-print("HEYYYY")
+print("\n🔍 Column Names in Dataset:")
+print(df.columns.tolist())  # Print all column names
+
+print("\n🔍 Dataset Loaded Successfully. Now Processing Feature Extraction...")
+print("HEYYYY")  # Keeps track of when extraction begins
 
 # Ensure data is sorted by participant and session
 df = df.sort_values(by=["participant", "session"])
 
 def extract_features_from_csv(df, split_factor=2):
-    """
-    Extracts advanced keystroke dynamics features for behavioral authentication.
-    Splits each session into smaller mini-sessions.
-    
-    Parameters:
-    df (pd.DataFrame): Keystroke data with columns like 'DU.key1.key1', 'DD.key1.key2', etc.
-    split_factor (int): Number of parts to split each session into.
-
-    Returns:
-    dict: A dictionary where keys are session identifiers and values are feature vectors.
-    """
+    """Extracts keystroke features for authentication, ensuring no NaN values."""
     if df.empty:
-        print("Dataset is empty. No features extracted.")
+        print("⚠️ Dataset is empty. No features extracted.")
         return {}
 
     formatted_data = {}
 
-    # Ensure data is sorted by participant and session
-    df = df.sort_values(by=["participant", "session"])
-
     for (participant, session), group in df.groupby(["participant", "session"]):
+        # Drop last row of each session to remove missing `key2`
+        group = group.iloc[:-1] if group.shape[0] > 1 else group
+
+        # Drop any remaining rows where `key2` is NaN
+        group = group.dropna(subset=["key2"])
+
+        # print(f"   ➡️ Number of valid keystrokes after cleaning: {group.shape[0]}")
+
         split_size = len(group) // split_factor
 
-        # Split session into mini-sessions
         for split_index in range(split_factor):
             start_idx = split_index * split_size
             end_idx = start_idx + split_size
@@ -48,38 +49,11 @@ def extract_features_from_csv(df, split_factor=2):
             if len(mini_df) < 2:
                 continue  # Skip empty sessions
 
-            # Extract keystroke timing features
             dwell_times = mini_df["DU.key1.key1"].dropna().tolist()
             flight_times = mini_df["DD.key1.key2"].dropna().tolist()
             latencies = mini_df["UD.key1.key2"].dropna().tolist()
             uu_timings = mini_df["UU.key1.key2"].dropna().tolist()
 
-            # Compute statistical features
-            feature_vector = {
-                "avg_dwell_time": np.mean(dwell_times) if dwell_times else 0,
-                "std_dwell_time": np.std(dwell_times) if dwell_times else 0,
-                "avg_flight_time": np.mean(flight_times) if flight_times else 0,
-                "std_flight_time": np.std(flight_times) if flight_times else 0,
-                "avg_latency": np.mean(latencies) if latencies else 0,
-                "std_latency": np.std(latencies) if latencies else 0,
-                "avg_UU_time": np.mean(uu_timings) if uu_timings else 0,
-                "std_UU_time": np.std(uu_timings) if uu_timings else 0,
-            }
-
-            # Compute Typing Speed
-            total_chars = len(mini_df)
-            session_duration = mini_df.iloc[-1]["DU.key1.key1"] if len(mini_df) > 1 else 1
-            words_typed = total_chars / 5  # Approximate word length
-
-            feature_vector["characters_per_second"] = total_chars / session_duration if session_duration > 0 else 0
-            feature_vector["words_per_minute"] = (words_typed / session_duration) * 60 if session_duration > 0 else 0
-
-            # Compute Key Frequency Variability
-            key_counts = Counter(mini_df["key1"])  # Count occurrences of each key
-            key_freq_std = np.std(list(key_counts.values())) if key_counts else 0
-            feature_vector["key_frequency_std"] = key_freq_std
-
-            # Compute Digraph and Trigraph Latencies
             digraph_latencies = []
             trigraph_latencies = []
 
@@ -88,13 +62,23 @@ def extract_features_from_csv(df, split_factor=2):
                 if i < len(mini_df) - 2:
                     trigraph_latencies.append(mini_df.iloc[i + 2]["DD.key1.key2"])
 
-            feature_vector["avg_digraph_latency"] = np.mean(digraph_latencies) if digraph_latencies else 0
-            feature_vector["std_digraph_latency"] = np.std(digraph_latencies) if digraph_latencies else 0
-            feature_vector["avg_trigraph_latency"] = np.mean(trigraph_latencies) if trigraph_latencies else 0
-            feature_vector["std_trigraph_latency"] = np.std(trigraph_latencies) if trigraph_latencies else 0
+            # Fix NaN values by replacing them with 0
+            feature_vector = {
+                "avg_dwell_time": np.nan_to_num(np.mean(dwell_times), nan=0),
+                "std_dwell_time": np.nan_to_num(np.std(dwell_times), nan=0),
+                "avg_flight_time": np.nan_to_num(np.mean(flight_times), nan=0),
+                "std_flight_time": np.nan_to_num(np.std(flight_times), nan=0),
+                "avg_latency": np.nan_to_num(np.mean(latencies), nan=0),
+                "std_latency": np.nan_to_num(np.std(latencies), nan=0),
+                "avg_UU_time": np.nan_to_num(np.mean(uu_timings), nan=0),
+                "std_UU_time": np.nan_to_num(np.std(uu_timings), nan=0),
+                "avg_digraph_latency": np.nan_to_num(np.mean(digraph_latencies), nan=0),
+                "std_digraph_latency": np.nan_to_num(np.std(digraph_latencies), nan=0),
+                "avg_trigraph_latency": np.nan_to_num(np.mean(trigraph_latencies), nan=0),
+                "std_trigraph_latency": np.nan_to_num(np.std(trigraph_latencies), nan=0),
+            }
 
-            # Store mini-session as a new session
-            session_key = f"{participant}_session{session}_part{split_index+1}"
+            session_key = f"{participant}_session{session}"
             formatted_data[session_key] = feature_vector
 
     return formatted_data
@@ -102,33 +86,26 @@ def extract_features_from_csv(df, split_factor=2):
 # Convert CSV data to feature vectors
 keystroke_features = extract_features_from_csv(df)
 
+# 🔍 **Print Feature Correlation Matrix**
+df_features = pd.DataFrame.from_dict(keystroke_features, orient="index")
+# print("\n🔍 Feature Correlation Matrix:")
+# print(df_features.corr())
+
 # Convert into NumPy arrays for training
 def create_pairs(data_dict):
-    """
-    Generates positive (same user) and negative (different user) pairs for training a Siamese network.
-    
-    Parameters:
-    data_dict (dict): A dictionary where keys are session identifiers and values are feature vectors.
-
-    Returns:
-    np.array: Feature vector pairs (X_train).
-    np.array: Labels (Y_train).
-    """
+    """Creates positive & negative pairs for training a Siamese network."""
     pairs = []
     labels = []
     user_ids = list(data_dict.keys())
 
     for user in user_ids:
         for i in range(len(user_ids) - 1):
-            # Convert dictionary features to NumPy array
             vec1 = np.array(list(data_dict[user_ids[i]].values()), dtype=np.float32)
             vec2 = np.array(list(data_dict[user_ids[i + 1]].values()), dtype=np.float32)
 
-            # Positive Pair (Same User, Different Session)
             pairs.append((vec1, vec2))
             labels.append(1)
 
-            # Negative Pair (Different User)
             impostor = np.random.choice(user_ids)
             while impostor == user:
                 impostor = np.random.choice(user_ids)
@@ -142,12 +119,10 @@ def create_pairs(data_dict):
 # Create training pairs
 X_train, Y_train = create_pairs(keystroke_features)
 
-# Print dataset stats
-print(f"Training Pairs: {X_train.shape[0]}")
+# 🔍 **Print Label Distribution**
+# print("\n🔍 Checking Label Distribution...")
+# print(f"🔍 Label Distribution: {np.bincount(Y_train.astype(int))}")
 
-# Create training pairs
-X_train, Y_train = create_pairs(keystroke_features)
-
-# Print dataset stats
-print(f"Training Pairs: {X_train.shape[0]}")
-print(X_train[0])
+# # Print dataset stats
+# print(f"Training Pairs: {X_train.shape[0]}")
+# print(X_train[0])  # Example feature pair
