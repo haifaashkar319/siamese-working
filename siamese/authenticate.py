@@ -4,78 +4,73 @@ import time
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import load_model
-from tensorflow.keras.layers import Lambda
 from pynput import keyboard
-from siamese import create_base_network
+from data_loader import extract_features_from_csv  # ✅ Keep only valid imports
 
-# 🔹 Define the Lambda function used in the model
-def l1_distance(vectors):
-    x, y = vectors
-    return tf.abs(x - y)
-
-# 🔹 Load the trained Siamese model with custom objects
+# 🔹 Load the trained Siamese model
 print("📥 Loading Siamese model...")
-siamese_model = load_model("models/siamese_model.h5", compile=False, custom_objects={"l1_distance": Lambda(l1_distance)})
-
-# 🔹 Print model expected input shape
-print("🔍 Siamese model expected input shape:", siamese_model.input_shape)
-
-num_features = 7  # Adjust based on dataset
-base_model = create_base_network((num_features,))
+siamese_model = load_model("models/siamese_model.h5", compile=False)
 print("✅ Siamese model loaded successfully.")
 
 # 🔹 Define dataset path
-file_path = "free-text (1).csv"
+file_path = "FreeDB.csv"
 
-def extract_features(user_data):
-    """Extracts only computable feature vectors from keystroke timestamps."""
-    if user_data.empty:
-        print("❌ No historical data for this user.")
-        return None
+def record_keystrokes():
+    """Records user keystrokes for authentication."""
+    print("\nStart typing... Press 'Enter' when done.\n")
 
-    timestamps = user_data["Timestamp"].values
+    keystrokes = []
+    start_time = time.time()
+    prev_key = None
+    prev_down_time = None
+    prev_up_time = None
+    key_count = 0  
 
-    if len(timestamps) < 2:
-        return None  # Not enough keystrokes to compute features
+    def on_press(key):
+        """Captures key press events."""
+        nonlocal prev_key, prev_down_time, key_count
 
-    # Compute flight times (time between consecutive keystrokes)
-    flight_times = np.diff(timestamps)
+        if key == keyboard.Key.enter:
+            print("\n✅ Typing sample recorded. Processing authentication...\n")
+            return False  # Stop listening
 
-    # Compute meaningful features
-    feature_vector = [
-        np.mean(flight_times) if len(flight_times) > 0 else 0,
-        np.std(flight_times) if len(flight_times) > 0 else 0,
-        np.median(flight_times) if len(flight_times) > 0 else 0,
-        np.min(flight_times) if len(flight_times) > 0 else 0,
-        np.max(flight_times) if len(flight_times) > 0 else 0,
-        len(timestamps),  # Total keystrokes recorded
-        len(timestamps) / (timestamps[-1] - timestamps[0]) if len(timestamps) > 1 else 0  # Typing speed
-    ]
+        key_name = key.name.capitalize() if isinstance(key, keyboard.Key) else key.char
+        timestamp = time.time()
 
-    # Convert to NumPy array with correct shape
-    features = np.array(feature_vector).reshape(1, -1)
+        # Compute inter-key timing values
+        du_time = round(timestamp - prev_down_time, 3) if prev_down_time else 0
+        dd_time = round(timestamp - prev_up_time, 3) if prev_up_time else 0
+        ud_time = round(timestamp - prev_down_time, 3) if prev_down_time else 0
+        uu_time = round(timestamp - prev_up_time, 3) if prev_up_time else 0
 
-    # Debugging output
-    print(f"📊 Extracted Features: {feature_vector}")
-    print(f"📊 Extracted Features Shape: {features.shape}")
+        key2 = prev_key if prev_key else key_name  # Use previous key as key1
+        key1 = key_name  # Current key as key2
 
-    return features
+        # Append keystroke data
+        keystrokes.append(["user_input", "1", key1, key2, du_time, dd_time, ud_time, uu_time])
 
-def match_feature_sizes(stored_features, new_features):
-    """Ensures stored and new features have the same number of samples."""
-    stored_len, new_len = len(stored_features), len(new_features)
+        # Display character count
+        key_count += 1
+        print(f"\r🔢 Characters typed: {key_count}", end="", flush=True)
 
-    print(f"🔄 Matching feature sizes: Stored = {stored_len}, New = {new_len}")
+        # Update previous key states
+        prev_key = key_name
+        prev_down_time = timestamp
 
-    if stored_len > new_len:
-        stored_features = stored_features[:new_len]  # Truncate stored data
-    elif new_len > stored_len:
-        new_features = new_features[:stored_len]  # Truncate new data
+    def on_release(key):
+        """Records key release timestamps."""
+        nonlocal prev_up_time
+        prev_up_time = time.time()
 
-    return stored_features, new_features
+    # Start keystroke listener
+    with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+        listener.join()
+
+    return pd.DataFrame(keystrokes, columns=["participant", "session", "key1", "key2", 
+                                             "DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"])
 
 def authenticate_user():
-    """Runs a single authentication test using the Siamese Network."""
+    """Runs authentication using the existing feature extraction from data_loader.py."""
     user_id = input("Enter your user ID (e.g., p101, p102): ").strip()
 
     if not os.path.exists(file_path):
@@ -91,72 +86,49 @@ def authenticate_user():
         print(f"❌ Authentication failed. User {user_id} not found.")
         return False
 
-    # 🔹 Ensure required columns exist
-    if "DU.key1.key2" not in df.columns or "Timestamp" not in df.columns:
-        print("❌ Error: Required columns 'DU.key1.key2' or 'Timestamp' are missing.")
+    # 🔹 Record user input keystrokes
+    new_keystroke_data = record_keystrokes()
+
+    # 🔹 Extract stored features using `data_loader.py`
+    extracted_features = extract_features_from_csv(df)
+
+    if user_id + "_session1" not in extracted_features:
+        print("❌ Failed to extract stored features. Cannot authenticate.")
         return False
 
-    print("\nStart typing a short sentence (10-15 words) to verify your identity. Press 'Enter' when done.\n")
+    stored_features = np.array(list(extracted_features[user_id + "_session1"].values()), dtype=np.float32).reshape(1, -1)
 
-    keystrokes = []
-    start_time = time.time()
-    last_timestamp = None
+    # 🔹 Extract new input features using `data_loader.py`
+    new_features_dict = extract_features_from_csv(new_keystroke_data)
 
-    def on_press(key):
-        nonlocal last_timestamp
-
-        if key == keyboard.Key.enter:
-            print("\n✅ Typing sample recorded. Verifying your identity...\n")
-            return False  # Stop listening
-
-        key_name = key.name.capitalize() if isinstance(key, keyboard.Key) else key.char
-        timestamp = time.time()
-        abs_time = round(timestamp - start_time, 3)
-        latency = round(timestamp - last_timestamp, 3) if last_timestamp else 0.000
-
-        keystrokes.append([key_name, latency, abs_time])
-        last_timestamp = timestamp
-
-    # 🔹 Start keystroke listener
-    with keyboard.Listener(on_press=on_press) as listener:
-        listener.join()
-
-    # 🔹 Convert keystrokes to DataFrame
-    new_keystroke_data = pd.DataFrame(keystrokes, columns=["key1", "DU.key1.key2", "Timestamp"])
-
-    # 🔹 Extract stored raw features
-    user_data = df[df["participant"] == user_id].sort_values(by="Timestamp")
-    stored_features = extract_features(user_data)
-
-    if stored_features is None:
-        return False
-
-    # 🔹 Extract raw features from new input
-    new_features = extract_features(new_keystroke_data)
-
-    if new_features is None:
+    if "user_input_session1" not in new_features_dict:
         print("❌ Failed to extract features from input.")
         return False
 
-    # 🔹 Debug print
-    print(f"📊 Stored Features Shape (raw): {stored_features.shape}")
-    print(f"📊 New Features Shape (raw): {new_features.shape}")
+    new_features = np.array(list(new_features_dict["user_input_session1"].values()), dtype=np.float32).reshape(1, -1)
 
-    # 🔹 Ensure both feature sets have the same length
-    stored_features, new_features = match_feature_sizes(stored_features, new_features)
+    # 🔹 Handle NaN Issues: Replace all NaNs with 0
+    stored_features = np.nan_to_num(stored_features, nan=0)
+    new_features = np.nan_to_num(new_features, nan=0)
 
-    # Debugging print before passing to model
-    print(f"📊 Final Stored Features Shape: {stored_features.shape}")
-    print(f"📊 Final New Features Shape: {new_features.shape}")
+    # 🔹 Debug: Print Feature Shapes
+    print(f"📊 Stored Features Shape: {stored_features.shape}")
+    print(f"📊 New Features Shape: {new_features.shape}")
 
-    # 🔹 Print actual input values before passing to the model
-    print("\n🔍 First 5 stored features:\n", stored_features[:5])
-    print("\n🔍 First 5 new features:\n", new_features[:5])
-
-    # 🔹 Use Siamese model to compare stored vs new raw features
+    # 🔹 Use Siamese model to compare stored vs new features
     similarity_score = siamese_model.predict([stored_features, new_features])[0][0]
 
     print(f"\n📊 Similarity Score: {similarity_score}")
 
-# 🔹 Run a single authentication test
+    # 🔹 Authentication threshold
+    threshold = 0.7
+
+    if similarity_score >= threshold:
+        print(f"✅ Authentication successful! Welcome back, {user_id}.")
+        return True
+    else:
+        print("❌ Authentication failed. Typing pattern does not match.")
+        return False
+
+# 🔹 Run authentication
 authenticate_user()
