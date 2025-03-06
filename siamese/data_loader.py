@@ -20,48 +20,49 @@ print(df.columns.tolist())
 print("\n🔍 Dataset Loaded Successfully. Now Processing Feature Extraction...")
 print("HEYYYY")  # Keeps track of when extraction begins
 
-# 🔹 Ensure sorting by participant
-df = df.sort_values(by=["participant"])
+
 
 # 🔥 **MERGE RAW DATA BY USER BEFORE FEATURE EXTRACTION**
 df = df.drop(columns=["session"], errors="ignore")
 
 def extract_features_from_csv(df):
-    """Extracts keystroke features for authentication, ensuring no NaN values."""
+    """Extracts keystroke features while ensuring only numeric columns are used."""
+    
+    # ✅ Drop categorical / non-numeric columns BEFORE computation
+    df = df.drop(columns=["participants", "session", "key1", "key2"], errors="ignore")
+
     if df.empty:
         print("⚠️ Dataset is empty. No features extracted.")
         return {}
 
     formatted_data = {}
+    total_participants = len(df['participant'].unique())
+    processed = 0
 
-    for participant, group in df.groupby("participant"):
-        group = group.dropna(subset=["key2"])  # Remove invalid keystrokes
+    for participant, group in df.groupby("participant", dropna=False):
 
-        dwell_times = group["DU.key1.key1"].dropna().tolist()
-        flight_times = group["DD.key1.key2"].dropna().tolist()
-        latencies = group["UD.key1.key2"].dropna().tolist()
-        uu_timings = group["UU.key1.key2"].dropna().tolist()
+        # ✅ Select only numeric columns (avoid categorical contamination)
+        numeric_columns = ["DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"]
+        
+        for col in numeric_columns:
+            if col not in group.columns:
+                print(f"⚠️ Missing column {col} for participant {participant}. Skipping...")
+                continue  # Skip if missing
+        
+        # ✅ Convert to numeric and drop non-numeric values
+        for col in numeric_columns:
+            group[col] = pd.to_numeric(group[col], errors="coerce")  # Convert to float, set invalid to NaN
+            group = group.dropna(subset=[col])  # Drop rows where timing data is missing
 
-        digraph_latencies = [group.iloc[i + 1]["DD.key1.key2"] for i in range(len(group) - 1)]
-        trigraph_latencies = [group.iloc[i + 2]["DD.key1.key2"] for i in range(len(group) - 2)]
-
-        # Replace NaNs with 0
+        # ✅ Compute features only on numerical values
         feature_vector = {
-            "avg_dwell_time": np.nan_to_num(np.mean(dwell_times), nan=0),
-            "std_dwell_time": np.nan_to_num(np.std(dwell_times), nan=0),
-            "avg_flight_time": np.nan_to_num(np.mean(flight_times), nan=0),
-            "std_flight_time": np.nan_to_num(np.std(flight_times), nan=0),
-            "avg_latency": np.nan_to_num(np.mean(latencies), nan=0),
-            "std_latency": np.nan_to_num(np.std(latencies), nan=0),
-            "avg_UU_time": np.nan_to_num(np.mean(uu_timings), nan=0),
-            "std_UU_time": np.nan_to_num(np.std(uu_timings), nan=0),
-            "avg_digraph_latency": np.nan_to_num(np.mean(digraph_latencies), nan=0),
-            "std_digraph_latency": np.nan_to_num(np.std(digraph_latencies), nan=0),
-            "avg_trigraph_latency": np.nan_to_num(np.mean(trigraph_latencies), nan=0),
-            "std_trigraph_latency": np.nan_to_num(np.std(trigraph_latencies), nan=0),
+            "avg_dwell_time": np.mean(group["DU.key1.key1"]) if not group["DU.key1.key1"].empty else 0,
+            "std_dwell_time": np.std(group["DU.key1.key1"]) if not group["DU.key1.key1"].empty else 0,
+            "avg_flight_time": np.mean(group["DD.key1.key2"]) if not group["DD.key1.key2"].empty else 0,
+            "std_flight_time": np.std(group["DD.key1.key2"]) if not group["DD.key1.key2"].empty else 0,
         }
 
-        formatted_data[participant] = feature_vector  # Store by user, not session
+        formatted_data[participant] = feature_vector  # ✅ Store by user only
 
     return formatted_data
 
@@ -90,19 +91,6 @@ def create_pairs(data_dict):
 
     return np.array(pairs, dtype=np.float32), np.array(labels, dtype=np.float32)
 
-def save_user_embeddings(keystroke_features):
-    """Saves user embeddings to a file."""
-    embedding_path = "user_embeddings.npy"
-
-    if os.path.exists(embedding_path):
-        existing_embeddings = np.load(embedding_path, allow_pickle=True).item()
-    else:
-        existing_embeddings = {}
-
-    existing_embeddings.update(keystroke_features)
-
-    np.save(embedding_path, existing_embeddings)
-    print("✅ User embeddings saved to `user_embeddings.npy`.")
 
 # 🔹 Extract features & create training data at the module level
 keystroke_features = extract_features_from_csv(df)
@@ -110,7 +98,6 @@ X_train, Y_train = create_pairs(keystroke_features)
 
 if __name__ == "__main__":
     # ✅ Save extracted features (embeddings)
-    save_user_embeddings(keystroke_features)
 
     # ✅ Print dataset statistics
     print(f"Training Pairs: {X_train.shape[0]}")
