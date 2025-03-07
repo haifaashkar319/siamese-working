@@ -1,70 +1,123 @@
 import pandas as pd
 import numpy as np
 import os
-from collections import Counter, defaultdict
 
 # 🔹 Load dataset
 file_path = os.path.join(os.path.dirname(__file__), "FreeDB.csv")
 df = pd.read_csv(file_path, low_memory=False)
 
+# ✅ Strip spaces from column names
+df.columns = df.columns.str.strip()
+
 print("🔍 Checking missing values in dataset:")
 print(df.isna().sum())  # Count missing values per column
 
-df["DU.key1.key1"] = pd.to_numeric(df["DU.key1.key1"], errors="coerce")
-df = df.dropna(subset=["DU.key1.key1"])
-df.columns = df.columns.str.strip()
+# ✅ Ensure participant column exists
+if "participant" not in df.columns:
+    raise KeyError("❌ 'participant' column is missing from dataset!")
 
-print("\n🔍 Column Names in Dataset:")
-print(df.columns.tolist())
+# ✅ Convert all relevant columns to numeric safely
+timing_columns = ["DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"]
+for col in timing_columns:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")  # Convert to float, set invalid to NaN
+
+df = df.dropna(subset=["DU.key1.key1"])  # Drop rows where key timing is missing
+
+print("\n🔍 Column Names in Dataset After Cleanup:", df.columns.tolist())  # DEBUG LINE
 
 print("\n🔍 Dataset Loaded Successfully. Now Processing Feature Extraction...")
 print("HEYYYY")  # Keeps track of when extraction begins
 
+# 🔹 Ensure sorting by participant
+df = df.sort_values(by=["participant"])
 
+# ✅ Print column names BEFORE dropping session
+print("🔍 Column Names in DataFrame Before Grouping:", df.columns.tolist()) 
 
 # 🔥 **MERGE RAW DATA BY USER BEFORE FEATURE EXTRACTION**
 df = df.drop(columns=["session"], errors="ignore")
 
-def extract_features_from_csv(df):
-    """Extracts keystroke features while ensuring only numeric columns are used."""
-    
-    # ✅ Drop categorical / non-numeric columns BEFORE computation
-    df = df.drop(columns=["participants", "session", "key1", "key2"], errors="ignore")
+# ✅ Ensure participant column wasn't dropped accidentally
+if "participant" not in df.columns:
+    raise KeyError("❌ ERROR: 'participant' column is missing after preprocessing!")
 
+def extract_features_from_csv(df):
+    """Extracts keystroke features for authentication, ensuring only numeric columns are used."""
     if df.empty:
         print("⚠️ Dataset is empty. No features extracted.")
         return {}
 
     formatted_data = {}
-    total_participants = len(df['participant'].unique())
+    total_participants = len(df["participant"].unique())
     processed = 0
 
     for participant, group in df.groupby("participant", dropna=False):
+        processed += 1
+        print(f"Processing participant {processed}/{total_participants}: {participant}")
 
-        # ✅ Select only numeric columns (avoid categorical contamination)
-        numeric_columns = ["DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"]
-        
-        for col in numeric_columns:
-            if col not in group.columns:
-                print(f"⚠️ Missing column {col} for participant {participant}. Skipping...")
-                continue  # Skip if missing
-        
-        # ✅ Convert to numeric and drop non-numeric values
-        for col in numeric_columns:
-            group[col] = pd.to_numeric(group[col], errors="coerce")  # Convert to float, set invalid to NaN
-            group = group.dropna(subset=[col])  # Drop rows where timing data is missing
+        # ✅ Convert all timing columns to numeric before computation
+        for col in timing_columns:
+            if col in group.columns:
+                group[col] = pd.to_numeric(group[col], errors="coerce")  # Convert to float, NaN if error
 
-        # ✅ Compute features only on numerical values
+        # ✅ Print row count before and after dropping missing values
+        print(f"🔹 {participant} Before Drop: {len(group)} rows")
+        group = group.dropna(subset=["DU.key1.key1", "DD.key1.key2"])
+        print(f"🔹 {participant} After Drop: {len(group)} rows")
+
+        # Skip participants with too few keystrokes
+        if len(group) < 3:
+            print(f"⚠️ Skipping {participant}: not enough valid keystrokes (found {len(group)})")
+            continue
+
+        # Extract valid timing features
+        dwell_times = group["DU.key1.key1"].dropna().tolist()
+        flight_times = group["DD.key1.key2"].dropna().tolist()
+        latencies = group["UD.key1.key2"].dropna().tolist() if "UD.key1.key2" in group.columns else []
+        uu_timings = group["UU.key1.key2"].dropna().tolist() if "UU.key1.key2" in group.columns else []
+
+        # Extract digraphs and trigraphs safely
+        digraph_latencies = []
+        trigraph_latencies = []
+        
+        for i in range(len(group) - 1):
+            try:
+                if i + 1 < len(group) and not pd.isna(group.iloc[i + 1]["DD.key1.key2"]):
+                    digraph_latencies.append(group.iloc[i + 1]["DD.key1.key2"])
+            except IndexError:
+                continue
+
+        for i in range(len(group) - 2):
+            try:
+                if i + 2 < len(group) and not pd.isna(group.iloc[i + 2]["DD.key1.key2"]):
+                    trigraph_latencies.append(group.iloc[i + 2]["DD.key1.key2"])
+            except IndexError:
+                continue
+
+        # Compute statistics
         feature_vector = {
-            "avg_dwell_time": np.mean(group["DU.key1.key1"]) if not group["DU.key1.key1"].empty else 0,
-            "std_dwell_time": np.std(group["DU.key1.key1"]) if not group["DU.key1.key1"].empty else 0,
-            "avg_flight_time": np.mean(group["DD.key1.key2"]) if not group["DD.key1.key2"].empty else 0,
-            "std_flight_time": np.std(group["DD.key1.key2"]) if not group["DD.key1.key2"].empty else 0,
+            "avg_dwell_time": np.nan_to_num(np.mean(dwell_times), nan=0),
+            "std_dwell_time": np.nan_to_num(np.std(dwell_times), nan=0),
+            "avg_flight_time": np.nan_to_num(np.mean(flight_times), nan=0),
+            "std_flight_time": np.nan_to_num(np.std(flight_times), nan=0),
         }
+        
+        if latencies:
+            feature_vector["avg_latency"] = np.nan_to_num(np.mean(latencies), nan=0)
+            feature_vector["std_latency"] = np.nan_to_num(np.std(latencies), nan=0)
+        if uu_timings:
+            feature_vector["avg_UU_time"] = np.nan_to_num(np.mean(uu_timings), nan=0)
+            feature_vector["std_UU_time"] = np.nan_to_num(np.std(uu_timings), nan=0)
 
-        formatted_data[participant] = feature_vector  # ✅ Store by user only
+        formatted_data[participant] = feature_vector
 
+    print(f"✅ Processed {len(formatted_data)}/{total_participants} participants successfully")
     return formatted_data
+
+# 🔹 Extract features
+keystroke_features = extract_features_from_csv(df)
+
 
 # Convert CSV data to feature vectors
 def create_pairs(data_dict):
