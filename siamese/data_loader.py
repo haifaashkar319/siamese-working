@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
+from sklearn.preprocessing import MinMaxScaler
 
 ### ----------------------- Data Loading & Preprocessing -----------------------
 
@@ -31,6 +32,10 @@ def preprocess_data(df):
 
     df = df.dropna(subset=["DU.key1.key1"])  # Ensure required columns have values
     df = df.sort_values(by=["participant", "session"])  # Maintain session order
+    
+    # Apply Min-Max Normalization per user
+    scaler = MinMaxScaler()
+    df[timing_columns] = df.groupby("participant")[timing_columns].transform(lambda x: scaler.fit_transform(x.values.reshape(-1, 1)).flatten())
     
     return df
 
@@ -110,6 +115,8 @@ def create_training_pairs(features_by_session):
                 vec_impostor = np.array(list(features_by_session[other_session].values()), dtype=np.float32)
                 pairs.append((vec1, vec_impostor))
                 labels.append(0)  # Different users -> Negative pair
+        for i in range(min(5, len(pairs))):
+            print(f"Pair {i+1}:\n  X1: {pairs[i][0]}\n  X2: {pairs[i][1]}\n  Label: {labels[i]}")
 
     return np.array(pairs), np.array(labels)
 
@@ -122,7 +129,7 @@ if __name__ == "__main__":
     print("✅ Validating data...")
     df = validate_data(df)
     
-    print("🔍 Preprocessing data...")
+    print("🔍 Preprocessing data (Min-Max Normalization)...")
     df = preprocess_data(df)
     
     print("🧑‍💻 Extracting features per session...")
