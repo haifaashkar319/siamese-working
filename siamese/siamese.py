@@ -42,31 +42,37 @@ class SiameseNetwork:
         """
         self.siamese_model.compile(*args, **kwargs)
 
-    def fit(self, x_train, y_train, batch_size, validation_data, **kwargs):
+    def fit(self, x_train, y_train, batch_size=32, validation_data=None, **kwargs):
         """
         Trains the model using keystroke feature pairs.
 
-        :param x_train: Feature pairs (two feature vectors per sample).
-        :param y_train: Labels (1 = same person, 0 = different people).
-        :param batch_size: Batch size for training.
-        :param validation_data: Validation dataset (X_test, Y_test).
+        :param x_train: List of two arrays [input_a, input_b] containing feature pairs
+        :param y_train: Labels (1 = same person, 0 = different people)
+        :param batch_size: Batch size for training
+        :param validation_data: Tuple of ([val_a, val_b], val_labels)
         """
-        x_test, y_test = validation_data
-        self.siamese_model.fit([x_train[:, 0], x_train[:, 1]], y_train,
-                               batch_size=batch_size,
-                               validation_data=([x_test[:, 0], x_test[:, 1]], y_test),
-                               **kwargs)
+        if validation_data is not None:
+            x_val, y_val = validation_data
+            validation_data = ([x_val[0], x_val[1]], y_val)
+            
+        return self.siamese_model.fit(
+            x_train,
+            y_train,
+            batch_size=batch_size,
+            validation_data=validation_data,
+            **kwargs
+        )
 
-    def evaluate(self, x, y, batch_size, **kwargs):
+    def evaluate(self, x, y, batch_size=32, **kwargs):
         """
         Evaluates the Siamese network.
 
-        :param x: Feature pairs (two feature vectors per sample).
-        :param y: Labels (1 = same person, 0 = different people).
-        :param batch_size: Batch size for evaluation.
-        :return: Evaluation results.
+        :param x: Feature pairs (two feature vectors per sample)
+        :param y: Labels (1 = same person, 0 = different people)
+        :param batch_size: Batch size for evaluation (default: 32)
+        :return: Evaluation results
         """
-        return self.siamese_model.evaluate([x[:, 0], x[:, 1]], y, batch_size=batch_size, **kwargs)
+        return self.siamese_model.evaluate(x, y, batch_size=batch_size, **kwargs)
 
     def predict(self, x):
         """
