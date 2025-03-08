@@ -50,11 +50,7 @@ scaler = StandardScaler()
 X1_train_array = scaler.fit_transform(X1_train_array)
 X2_train_array = scaler.transform(X2_train_array)
 
-print(f"✅ Input shapes: X1={X1_train_array.shape}, X2={X2_train_array.shape}, Y={Y_train_array.shape}")
 
-# Debug: Print first 5 training pairs
-for i in range(min(5, len(X1_train_array))):
-    print(f"Pair {i+1}:\n  X1: {X1_train_array[i]}\n  X2: {X2_train_array[i]}\n  Label: {Y_train_array[i]}")
 
 # Verify shapes match
 if X1_train_array.shape != X2_train_array.shape:
@@ -90,7 +86,7 @@ siamese_network = SiameseNetwork(base_model, head_model)
 print("🛠️ Compiling the model...")
 siamese_network.compile(
     loss='binary_crossentropy',
-    optimizer=Adam(learning_rate=0.001),
+    optimizer=Adam(learning_rate=0.0005),
     metrics=['accuracy']
 )
 
@@ -107,15 +103,13 @@ print("🚀 Training the Siamese network...")
 
 def debug_training_data(epoch, logs):
     print(f"\n🔹 Epoch {epoch+1}: Training on {len(X1_train_data)} pairs")
-    for i in range(min(5, len(X1_train_data))):
-        print(f"Pair {i+1}: X1={X1_train_data[i]}, X2={X2_train_data[i]}, Label={Y_train_data[i]}")
-
+    
 history = siamese_network.fit(
     [X1_train_data, X2_train_data],  # Training inputs as a list of two arrays
     Y_train_data,
     batch_size=32,
     validation_data=([X1_val_data, X2_val_data], Y_val_data),
-    epochs=20,
+    epochs=30,
     verbose=1,
     callbacks=[tf.keras.callbacks.LambdaCallback(on_epoch_end=debug_training_data)]
 )

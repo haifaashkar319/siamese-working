@@ -115,7 +115,9 @@ def create_base_network(input_shape):
     model = tf.keras.Sequential([
         layers.Dense(128, activation='relu', input_shape=input_shape),
         layers.BatchNormalization(),
+        layers.Dropout(0.2),
         layers.Dense(64, activation='relu'),
+        layers.Dropout(0.2),
         layers.Dense(32, activation='relu')
     ])
     return model
