@@ -1,12 +1,10 @@
-# Standard library imports
 import os
-
-# Third-party imports
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.utils import get_custom_objects
 import tensorflow.keras.backend as K
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
 # Local imports
@@ -48,7 +46,15 @@ X1_train_array = np.array([pair[0] for pair in X_train], dtype=np.float32)
 X2_train_array = np.array([pair[1] for pair in X_train], dtype=np.float32)
 Y_train_array = np.array(Y_train, dtype=np.float32)
 
+scaler = StandardScaler()
+X1_train_array = scaler.fit_transform(X1_train_array)
+X2_train_array = scaler.transform(X2_train_array)
+
 print(f"✅ Input shapes: X1={X1_train_array.shape}, X2={X2_train_array.shape}, Y={Y_train_array.shape}")
+
+# Debug: Print first 5 training pairs
+for i in range(min(5, len(X1_train_array))):
+    print(f"Pair {i+1}:\n  X1: {X1_train_array[i]}\n  X2: {X2_train_array[i]}\n  Label: {Y_train_array[i]}")
 
 # Verify shapes match
 if X1_train_array.shape != X2_train_array.shape:
@@ -61,6 +67,9 @@ input_shape = (X1_train_array.shape[1],)
 X1_train_data, X1_val_data, X2_train_data, X2_val_data, Y_train_data, Y_val_data = train_test_split(
     X1_train_array, X2_train_array, Y_train_array, test_size=0.2, random_state=42
 )
+
+print(f"✅ Training set size: {len(X1_train_data)} pairs")
+print(f"✅ Validation set size: {len(X1_val_data)} pairs")
 
 # 🔹 Step 4: Define and Register `l1_distance`
 @tf.keras.utils.register_keras_serializable()
@@ -85,15 +94,30 @@ siamese_network.compile(
     metrics=['accuracy']
 )
 
+# Debug: Print model summary
+print(f"✅ Base Model Summary:")
+base_model.summary()
+
+print(f"✅ Siamese Model Summary:")
+siamese_network.siamese_model.summary()
+
+
 # 🔹 Step 6: Train the Model
 print("🚀 Training the Siamese network...")
+
+def debug_training_data(epoch, logs):
+    print(f"\n🔹 Epoch {epoch+1}: Training on {len(X1_train_data)} pairs")
+    for i in range(min(5, len(X1_train_data))):
+        print(f"Pair {i+1}: X1={X1_train_data[i]}, X2={X2_train_data[i]}, Label={Y_train_data[i]}")
+
 history = siamese_network.fit(
     [X1_train_data, X2_train_data],  # Training inputs as a list of two arrays
     Y_train_data,
     batch_size=32,
     validation_data=([X1_val_data, X2_val_data], Y_val_data),
     epochs=20,
-    verbose=1
+    verbose=1,
+    callbacks=[tf.keras.callbacks.LambdaCallback(on_epoch_end=debug_training_data)]
 )
 
 # 🔹 Step 7: Evaluate Model Performance
