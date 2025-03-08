@@ -6,7 +6,15 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras import backend as K
 from pynput import keyboard
-from data_loader import extract_features_from_csv  # ✅ Extracts raw features
+from data_loader import extract_features_from_csv  # ✅ Reuse feature extraction
+
+# ✅ Fixed feature order (must match generate_embeddings.py)
+FIXED_FEATURE_KEYS = [
+    "avg_dwell_time", "std_dwell_time",
+    "avg_flight_time", "std_flight_time",
+    "avg_latency", "std_latency",
+    "avg_UU_time", "std_UU_time"
+]
 
 @tf.keras.utils.register_keras_serializable()
 def l1_distance(vects):
@@ -14,141 +22,154 @@ def l1_distance(vects):
     x, y = vects
     return K.abs(x - y)
 
-custom_objects = {"l1_distance": l1_distance}
-print("checkpoint 1")
-# 🔹 Load the trained Siamese model
-print("📥 Loading Siamese model...")
-siamese_model = load_model("models/siamese_model.h5", custom_objects=custom_objects, compile=False)
-print("checkpoint 2")
-print("✅ Siamese model loaded.")
+# ✅ Step 1: Load Model & Embeddings
+try:
+    print("📥 Loading model and embeddings...")
+    siamese_model = load_model("models/siamese_model.h5", custom_objects={"l1_distance": l1_distance})
+    base_model = siamese_model.get_layer(index=2)  # ✅ Extract embedding model
+    expected_input_shape = base_model.input_shape[-1]  # Get expected feature size
+    user_embeddings = np.load("user_embeddings.npy", allow_pickle=True).item()
+    print(f"✅ Model and embeddings loaded successfully (Expected Input Shape: {expected_input_shape})")
+except Exception as e:
+    print(f"❌ Error loading model or embeddings: {e}")
+    exit()
 
-# 🔍 **Print Model Summary**
-print("\n🔍 Model Summary:")
-siamese_model.summary()
-print("checkpoint 3")
-# 🔍 **Check Layers and Shapes**
-print("\n🔍 Siamese Model Layers & Shapes:")
-for layer in siamese_model.layers:
-    print(f"🔹 Layer: {layer.name}, Input Shape: {layer.input_shape}, Output Shape: {layer.output_shape}")
-
-# 🔹 Identify the correct embedding layer
-# If your base_model is at index 2 and it expects input shape (None, 32), it means we are using embeddings, not raw features.
-base_model = siamese_model.get_layer(index=2)
-print(f"\n✅ Selected Base Model: {base_model.name}")
-print(f"🔹 Base Model Input Shape: {base_model.input_shape}, Output Shape: {base_model.output_shape}")
-
-# 🔹 Load stored embeddings
-embedding_path = "user_embeddings.npy"
-if os.path.exists(embedding_path):
-    user_embeddings = np.load(embedding_path, allow_pickle=True).item()
-    print("✅ User embeddings loaded.")
-    print(f"🔍 Available user embeddings: {list(user_embeddings.keys())}")
-else:
-    print("❌ No stored embeddings found! Run training first.")
-    user_embeddings = {}
-
-# 🔹 Define dataset path
-file_path = "FreeDB.csv"
-
-def authenticate_user():
-    """Runs authentication using stored embeddings."""
-    user_id = input("Enter your user ID (e.g., p101, p102): ").strip()
-
-    if user_id not in user_embeddings:
-        print(f"❌ Authentication failed. No stored embedding for user {user_id}.")
-        return False
-
-    print("\nStart typing a short sentence (10-15 words) to verify your identity. Press 'Enter' when done.\n")
-
-    # 🔹 Keystroke Recording
+# ✅ Step 2: Collect Keystroke Data
+def collect_keystroke_data():
+    """Collects keystroke timing data from user input."""
     keystrokes = []
-    start_time = time.time()
     prev_key = None
     prev_down_time = None
     prev_up_time = None
+    finished = False
 
     def on_press(key):
-        """Captures key press events and records timing data."""
-        nonlocal prev_key, prev_down_time
-
+        nonlocal prev_key, prev_down_time, finished
         if key == keyboard.Key.enter:
-            print("\n✅ Typing sample recorded. Verifying your identity...\n")
-            return False  # Stop listening
+            finished = True
+            return False
 
-        key_name = key.name.capitalize() if isinstance(key, keyboard.Key) else key.char
         timestamp = time.time()
+        
+        # Handle special keys
+        try:
+            key_name = key.char
+        except AttributeError:
+            key_name = str(key).replace('Key.', '')
 
-        # Compute inter-key timing values
+        # Calculate timing features
         du_time = round(timestamp - prev_down_time, 3) if prev_down_time else 0
         dd_time = round(timestamp - prev_up_time, 3) if prev_up_time else 0
         ud_time = round(timestamp - prev_down_time, 3) if prev_down_time else 0
         uu_time = round(timestamp - prev_up_time, 3) if prev_up_time else 0
 
-        key2 = prev_key if prev_key else key_name  # Use previous key as key1
-        key1 = key_name  # Current key as key2
+        # Record keystroke data
+        if prev_key:
+            keystrokes.append({
+                'key1': prev_key,
+                'key2': key_name,
+                'DU.key1.key1': du_time,
+                'DD.key1.key2': dd_time,
+                'UD.key1.key2': ud_time,
+                'UU.key1.key2': uu_time
+            })
 
-        # Append keystroke data
-        keystrokes.append([user_id, "1", key1, key2, du_time, dd_time, ud_time, uu_time])
-
-        # Update previous key states
         prev_key = key_name
         prev_down_time = timestamp
 
     def on_release(key):
-        """Records key release timestamps."""
         nonlocal prev_up_time
         prev_up_time = time.time()
 
-    # 🔹 Start keystroke listener
+    # Start collecting keystrokes
+    print("\n⌨️ Please type to verify your identity (Press Enter when done):")
     with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
-        listener.join()
+        while not finished:
+            pass
 
-    # 🔹 Convert keystrokes to DataFrame
-    new_keystroke_data = pd.DataFrame(keystrokes, columns=["participant", "session", "key1", "key2",
-                                                            "DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"])
+    return keystrokes
+
+# ✅ Step 3: Extract Features from Keystrokes
+def extract_features(keystrokes):
+    """Extracts timing features from collected keystrokes."""
+    if not keystrokes:
+        return None
+
+    # Extract timing sequences
+    dwell_times = [k['DU.key1.key1'] for k in keystrokes if k['DU.key1.key1'] > 0]
+    flight_times = [k['DD.key1.key2'] for k in keystrokes if k['DD.key1.key2'] > 0]
+    latencies = [k['UD.key1.key2'] for k in keystrokes if k['UD.key1.key2'] > 0]
+    uu_times = [k['UU.key1.key2'] for k in keystrokes if k['UU.key1.key2'] > 0]
+
+    # Compute feature vector
+    features = {
+        'avg_dwell_time': np.mean(dwell_times) if dwell_times else 0,
+        'std_dwell_time': np.std(dwell_times) if dwell_times else 0,
+        'avg_flight_time': np.mean(flight_times) if flight_times else 0,
+        'std_flight_time': np.std(flight_times) if flight_times else 0,
+        'avg_latency': np.mean(latencies) if latencies else 0,
+        'std_latency': np.std(latencies) if latencies else 0,
+        'avg_UU_time': np.mean(uu_times) if uu_times else 0,
+        'std_UU_time': np.std(uu_times) if uu_times else 0
+    }
+
+    return features
+
+# ✅ Step 4: Authenticate User
+def authenticate_user():
+    """Main authentication flow."""
+    print("\n🔍 Available users:", list(user_embeddings.keys()))
+    user_id = input("Enter your user ID: ").strip()
+    if user_id not in user_embeddings:
+        print("❌ User ID not found in database")
+        return False
+
+    print("\n⌨️ Please type to verify your identity...")
+    keystrokes = collect_keystroke_data()
+    features = extract_features(keystrokes)
+    if not features:
+        print("❌ No valid keystroke data collected")
+        return False
+
+    # Convert features to match generate_embeddings.py format
+    numerical_features = []
+    for key in FIXED_FEATURE_KEYS:
+        try:
+            value = features.get(key, 0.0)
+            numerical_features.append(float(value))
+        except (ValueError, TypeError):
+            print(f"⚠️ Invalid value for feature '{key}': {value}")
+            numerical_features.append(0.0)
+
+    # Create feature vector with shape (8,)
+    feature_vector = np.array(numerical_features, dtype=np.float32)
+    print(f"✅ Input feature vector shape: {feature_vector.shape}")
+
+    # Reshape input features to (1, 8)
+    feature_vector = feature_vector.reshape(1, -1)
     
-    # 🔹 Extract raw features from new input
-    new_features_dict = extract_features_from_csv(new_keystroke_data)
+    # Get stored features and reshape to (1, 8)
+    stored_features = user_embeddings[user_id].reshape(1, -1)
+    
+    print(f"✅ Comparing features - Stored: {stored_features.shape}, New: {feature_vector.shape}")
+    
+    # Use siamese model to compare raw feature vectors directly
+    similarity = siamese_model.predict(
+        [feature_vector, feature_vector],  # Compare feature vectors directly
+        verbose=0
+    )[0][0]
 
-    if user_id not in new_features_dict:
-        print("❌ Failed to extract features from input.")
-        return False
-
-    # 🔥 **DEBUG: Check Raw Features Shape Before Embedding**
-    new_features = np.array(list(new_features_dict[user_id].values()), dtype=np.float32).reshape(1, -1)
-    print(f"✅ New Features Shape (before embedding): {new_features.shape}")
-
-    # 🔥 **DEBUG: Check Expected Input Shape for `base_model`**
-    if new_features.shape[-1] != base_model.input_shape[-1]:
-        print(f"⚠️ Mismatch: New features have {new_features.shape[-1]} dimensions but `base_model` expects {base_model.input_shape[-1]}!")
-
-    # 🔹 Convert raw features to embeddings using `base_model`
-    new_embedding = base_model.predict(new_features)[0]  # ✅ Convert to embedding
-
-    # 🔹 Retrieve stored embedding for this user
-    stored_embedding = np.array(user_embeddings[user_id], dtype=np.float32)
-    print(f"✅ Stored Embedding for {user_id} -> Shape: {stored_embedding.shape}")
-    print(f"✅ New Embedding for {user_id} -> Shape: {new_embedding.shape}")
-
-    # 🔥 **DEBUG: Check if stored and new embeddings have the same shape**
-    if stored_embedding.shape != new_embedding.shape:
-        print(f"⚠️ Shape Mismatch! Stored Embedding: {stored_embedding.shape}, New Embedding: {new_embedding.shape}")
-        return False
-
-    # 🔹 Compare stored vs. new embedding using the Siamese model
-    similarity_score = siamese_model.predict([stored_embedding.reshape(1, -1), new_embedding.reshape(1, -1)])[0][0]
-
-    print(f"\n📊 Similarity Score: {similarity_score}")
-
-    # 🔹 Authentication threshold
+    # Authentication decision
     threshold = 0.7
-
-    if similarity_score >= threshold:
-        print(f"✅ Authentication successful! Welcome back, {user_id}.")
+    print(f"\n📊 Similarity score: {similarity:.3f}")
+    
+    if similarity >= threshold:
+        print("✅ Authentication successful!")
         return True
     else:
-        print("❌ Authentication failed. Typing pattern does not match.")
+        print("❌ Authentication failed")
         return False
 
-# 🔹 Run authentication
-authenticate_user()
+# ✅ Run Authentication
+if __name__ == "__main__":
+    authenticate_user()

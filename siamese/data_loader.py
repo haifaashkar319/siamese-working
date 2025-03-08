@@ -51,6 +51,7 @@ def extract_features_from_csv(df):
     formatted_data = {}
     total_participants = len(df["participant"].unique())
     processed = 0
+    feature_dim = None  # Track feature dimensionality
 
     for participant, group in df.groupby("participant", dropna=False):
         processed += 1
@@ -110,9 +111,14 @@ def extract_features_from_csv(df):
             feature_vector["avg_UU_time"] = np.nan_to_num(np.mean(uu_timings), nan=0)
             feature_vector["std_UU_time"] = np.nan_to_num(np.std(uu_timings), nan=0)
 
+        if feature_dim is None:
+            feature_dim = len(feature_vector)
+        elif feature_dim != len(feature_vector):
+            print(f"⚠️ WARNING: Inconsistent feature dimensions! Previous: {feature_dim}, Current: {len(feature_vector)}")
+
         formatted_data[participant] = feature_vector
 
-    print(f"✅ Processed {len(formatted_data)}/{total_participants} participants successfully")
+    print(f"✅ Final feature dimension: {feature_dim}")
     return formatted_data
 
 # 🔹 Extract features
