@@ -115,8 +115,7 @@ def create_training_pairs(features_by_session):
                 vec_impostor = np.array(list(features_by_session[other_session].values()), dtype=np.float32)
                 pairs.append((vec1, vec_impostor))
                 labels.append(0)  # Different users -> Negative pair
-        for i in range(min(5, len(pairs))):
-            print(f"Pair {i+1}:\n  X1: {pairs[i][0]}\n  X2: {pairs[i][1]}\n  Label: {labels[i]}")
+       
 
     return np.array(pairs), np.array(labels)
 
