@@ -1,103 +1,122 @@
+import os
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from tensorflow.keras.models import load_model
-import os
-import pandas as pd
 import tensorflow.keras.backend as K
-from data_loader import extract_features_from_csv  # ✅ Reuse feature extraction
+from data_loader import extract_features_for_session, load_data, validate_data, preprocess_data
 
-# 🔹 Step 1: Define and Register `l1_distance`
+### ----------------------- Step 1: Define & Register Custom Functions -----------------------
+
 @tf.keras.utils.register_keras_serializable()
 def l1_distance(vects):
     """Computes L1 distance (Manhattan distance) between two input vectors."""
     x, y = vects
     return K.abs(x - y)
 
-# 🔹 Step 2: Register Custom Function Before Loading Model
+# Register custom function before loading the model
 custom_objects = {"l1_distance": l1_distance}
 
-# 🔹 Step 3: Load trained model
-print("📥 Loading trained Siamese model...")
-try:
-    siamese_model = load_model("models/siamese_model.h5", custom_objects=custom_objects, compile=False)
-    print("✅ Model loaded successfully.")
-except Exception as e:
-    print(f"❌ ERROR: Could not load model! Reason: {e}")
-    exit()
+### ----------------------- Step 2: Load Pretrained Siamese Model -----------------------
 
-# Fix: Get input shape correctly from model's config
-base_model = siamese_model.get_layer(index=2)  # Adjust index if necessary
-expected_input_shape = base_model.input_shape[-1]  # Get expected feature size
-print(f"✅ Using `{base_model.name}` as the embedding model (Expected Input Shape: {expected_input_shape})")
+def load_siamese_model(model_path="models/siamese_model.h5"):
+    """Loads the trained Siamese model."""
+    print("📥 Loading trained Siamese model...")
+    try:
+        model = load_model(model_path, custom_objects=custom_objects, compile=False)
+        print("✅ Model loaded successfully.")
+        return model
+    except Exception as e:
+        print(f"❌ ERROR: Could not load model! Reason: {e}")
+        exit()
 
-# 🔹 Step 4: Load dataset again to extract features
-file_path = os.path.join(os.path.dirname(__file__), "FreeDB.csv")
-df = pd.read_csv(file_path, low_memory=False)
+### ----------------------- Step 3: Extract Features from Dataset -----------------------
 
-# Ensure dataset isn't empty
-if df.empty:
-    print("❌ ERROR: Dataset is empty!")
-    exit()
+def extract_features(file_path="FreeDB.csv"):
+    """Loads the dataset, validates it, preprocesses it, and extracts keystroke features."""
+    print("📥 Loading dataset...")
+    df = load_data(file_path)
 
-# Extract features from the dataset
-print("🔍 Extracting features from dataset...")
-keystroke_features = extract_features_from_csv(df)
+    print("✅ Validating dataset...")
+    df = validate_data(df)
 
-# Ensure feature extraction worked
-if not keystroke_features:
-    print("❌ ERROR: No features extracted! Exiting.")
-    exit()
+    print("🔍 Preprocessing dataset (Applying Min-Max Normalization)...")
+    df = preprocess_data(df)
 
-# 🔹 Step 5: Define a fixed feature order based on training (adjust to match training)
-fixed_feature_keys = [
-    "avg_dwell_time", "std_dwell_time",
-    "avg_flight_time", "std_flight_time",
-    "avg_latency", "std_latency",
-    "avg_UU_time", "std_UU_time"
-]  # ✅ Ensure this matches the model's expected input!
+    print("🧑‍💻 Extracting features per session...")
+    features_by_session = extract_features_for_session(df)
 
-# Ensure that we have the correct number of features
-if len(fixed_feature_keys) != expected_input_shape:
-    print(f"❌ ERROR: Model expects {expected_input_shape} features, but we have {len(fixed_feature_keys)}")
-    exit()
+    if not features_by_session:
+        print("❌ ERROR: No features extracted! Exiting.")
+        exit()
 
-# Before processing features
-print(f"🔍 Number of fixed features: {len(fixed_feature_keys)}")
+    print(f"✅ Extracted features for {len(features_by_session)} sessions.")
+    return features_by_session
 
-# 🔹 Step 6: Convert extracted features to embeddings
-user_embeddings = {}
+### ----------------------- Step 4: Aggregate Features (Hybrid Approach) -----------------------
 
-# Modify the embedding generation section
-for user, features in keystroke_features.items():
-    numerical_features = []
-    for key in fixed_feature_keys:
-        value = features.get(key, 0.0)
-        try:
-            numerical_features.append(float(value))
-        except (ValueError, TypeError):
-            print(f"⚠️ Invalid value for {user}, feature '{key}': {value}")
-            numerical_features.append(0.0)
+def aggregate_features(features_by_session):
+    """
+    Aggregates per-session features into per-user features.
 
-    feature_vector = np.array(numerical_features, dtype=np.float32).reshape(1, -1)
+    :param features_by_session: Dictionary containing keystroke feature vectors per session.
+    :return: user_features (aggregated per-user), session_features (individual sessions).
+    """
 
-    # Ensure correct shape for model input
-    if feature_vector.shape != (1, expected_input_shape):  # ✅ Fixed shape validation
-        print(f"❌ Shape mismatch for {user}: Got {feature_vector.shape}, expected {(1, expected_input_shape)}")
-        continue
+    print("\n🛠 Aggregating features...")
 
-    # Generate embedding
-    embedding = base_model.predict(feature_vector, verbose=0)[0]
-    print(f"✅ {user} -> Feature shape: {feature_vector.shape}, Embedding shape: {embedding.shape}")
-    user_embeddings[user] = embedding
+    user_features = {}   # 🔹 Stores **user-level** aggregated features
+    session_features = {}  # 🔹 Stores **session-level** features
+    user_sessions = {}  # 🔹 Temporary storage for per-user session features
 
-# Ensure embeddings were created
-if not user_embeddings:
-    print("❌ ERROR: No embeddings were created! Check input data.")
-    exit()
+    for session_key, features in features_by_session.items():
+        user_id = session_key.split("_s")[0]  # Extract user from session key
+        session_id = session_key.split("_s")[1]  # Extract session ID
 
-print(f"\n🔍 Final embedding dimensions: {next(iter(user_embeddings.values())).shape}")
+        # Store session-level features
+        session_features[session_key] = features
+        print(f"✅ {user_id} (Session {session_id}) -> Features extracted.")
 
-# 🔹 Step 7: Save embeddings
-embedding_path = "user_embeddings.npy"
-np.save(embedding_path, user_embeddings)
-print("✅ User embeddings saved to `user_embeddings.npy` successfully!")
+        # Collect session features for user-level aggregation
+        if user_id not in user_sessions:
+            user_sessions[user_id] = []
+        user_sessions[user_id].append(features)
+
+    # Compute **per-user aggregated features** by averaging session features
+    for user_id, session_feature_list in user_sessions.items():
+        if session_feature_list:
+            # Convert list of session feature dicts to DataFrame
+            df_user_sessions = pd.DataFrame(session_feature_list)
+            user_features[user_id] = df_user_sessions.mean().to_dict()  # 🔹 Hybrid: Compute mean per-user
+            print(f"🟢 Computed User-Level Features for {user_id}")
+
+    if not user_features:
+        print("❌ ERROR: No user features created! Check input data.")
+        exit()
+
+    print(f"📊 Final User Feature Count: {len(user_features)}")
+    return user_features, session_features
+
+### ----------------------- Step 5: Save Features -----------------------
+
+def save_features(user_features, session_features, user_path="user_features.npy", session_path="session_features.npy"):
+    """Saves user and session features as numpy files."""
+    np.save(user_path, user_features)
+    np.save(session_path, session_features)
+    print(f"✅ User features saved to `{user_path}`")
+    print(f"✅ Session features saved to `{session_path}`")
+
+### ----------------------- Execution Flow -----------------------
+
+if __name__ == "__main__":
+    # Load model
+    siamese_model = load_siamese_model()
+    
+    # Extract features from dataset
+    features_by_session = extract_features()
+
+    # Aggregate features (Hybrid Approach)
+    user_features, session_features = aggregate_features(features_by_session)
+
+    # Save features
+    save_features(user_features, session_features)
