@@ -1,34 +1,8 @@
 import os
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from tensorflow.keras.models import load_model
-import tensorflow.keras.backend as K
 from data_loader import extract_features_for_session, load_data, validate_data, preprocess_data
 
-### ----------------------- Step 1: Define & Register Custom Functions -----------------------
-
-@tf.keras.utils.register_keras_serializable()
-def l1_distance(vects):
-    """Computes L1 distance (Manhattan distance) between two input vectors."""
-    x, y = vects
-    return K.abs(x - y)
-
-# Register custom function before loading the model
-custom_objects = {"l1_distance": l1_distance}
-
-### ----------------------- Step 2: Load Pretrained Siamese Model -----------------------
-
-def load_siamese_model(model_path="models/siamese_model.h5"):
-    """Loads the trained Siamese model."""
-    print("📥 Loading trained Siamese model...")
-    try:
-        model = load_model(model_path, custom_objects=custom_objects, compile=False)
-        print("✅ Model loaded successfully.")
-        return model
-    except Exception as e:
-        print(f"❌ ERROR: Could not load model! Reason: {e}")
-        exit()
 
 ### ----------------------- Step 3: Extract Features from Dataset -----------------------
 
@@ -55,9 +29,11 @@ def extract_features(file_path="FreeDB.csv"):
 
 ### ----------------------- Step 4: Aggregate Features (Hybrid Approach) -----------------------
 
+### ----------------------- Step 4: Aggregate Features (Hybrid Approach) -----------------------
+
 def aggregate_features(features_by_session):
     """
-    Aggregates per-session features into per-user features.
+    Aggregates per-session features into per-user features and prints them for debugging.
 
     :param features_by_session: Dictionary containing keystroke feature vectors per session.
     :return: user_features (aggregated per-user), session_features (individual sessions).
@@ -75,7 +51,9 @@ def aggregate_features(features_by_session):
 
         # Store session-level features
         session_features[session_key] = features
-        print(f"✅ {user_id} (Session {session_id}) -> Features extracted.")
+        print(f"\n📌 Features for {user_id} (Session {session_id}):")
+        for key, value in features.items():
+            print(f"   🔹 {key}: {value}")
 
         # Collect session features for user-level aggregation
         if user_id not in user_sessions:
@@ -88,7 +66,9 @@ def aggregate_features(features_by_session):
             # Convert list of session feature dicts to DataFrame
             df_user_sessions = pd.DataFrame(session_feature_list)
             user_features[user_id] = df_user_sessions.mean().to_dict()  # 🔹 Hybrid: Compute mean per-user
-            print(f"🟢 Computed User-Level Features for {user_id}")
+            print(f"\n🟢 Computed User-Level Features for {user_id}:")
+            for key, value in user_features[user_id].items():
+                print(f"   ✅ {key}: {value}")
 
     if not user_features:
         print("❌ ERROR: No user features created! Check input data.")
@@ -110,7 +90,6 @@ def save_features(user_features, session_features, user_path="user_features.npy"
 
 if __name__ == "__main__":
     # Load model
-    siamese_model = load_siamese_model()
     
     # Extract features from dataset
     features_by_session = extract_features()
