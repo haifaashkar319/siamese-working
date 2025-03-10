@@ -3,9 +3,13 @@ import csv
 from collections import deque
 from pynput import keyboard  # Keystroke listener
 
+# Prompt for participant ID and session
+participant_id = input("Enter Participant ID: ")
+session_number = input("Enter Session Number: ")
+
 # File paths
-raw_file = "KeystrokeData.csv"
-processed_file = "ProcessedKeystrokeData.csv"
+raw_file = "FreeDB_Raw.csv"
+processed_file = "FreeDB2.csv"
 
 # Store raw keystroke timestamps
 keystroke_events = deque()  # Stores (key, press_time, release_time)
@@ -35,48 +39,52 @@ def on_release(key):
 
 def save_raw_keystrokes():
     """Save raw keystrokes to CSV."""
-    with open(raw_file, mode="w", newline="") as file:
+    with open(raw_file, mode="a", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["key", "press_time", "release_time"])  # Header
-        writer.writerows(keystroke_events)
+        
+        # Write header if new file
+        if file.tell() == 0:
+            writer.writerow(["participant", "session", "key", "press_time", "release_time"])
+        
+        for key, press_time, release_time in keystroke_events:
+            writer.writerow([participant_id, session_number, key, press_time, release_time])
+
     print(f"✅ Raw keystroke data saved to {raw_file}")
 
 def process_keystroke_data():
-    """Compute UD, DU, DD, UU features using the **correct** formula."""
+    """Compute UD, DU, DD, UU features using the correct formula."""
     keystroke_data = []
-
-    print("\n🔍 **Processing Keystroke Features** 🔍")
-    print("────────────────────────────────────────────────────────")
-    print("KEY1 → KEY2  | DU.key1.key2 | UD.key1.key2 | DD.key1.key2 | UU.key1.key2")
 
     for i in range(len(keystroke_events) - 1):
         key1, press1, release1 = keystroke_events[i]
         key2, press2, release2 = keystroke_events[i + 1]
 
-        # Apply **corrected** keystroke feature computation
-        du_time = round(release1 - press1, 3)  # Down-Up (DU) key1 → key2
-        ud_time = round(press2 - release1, 3)  # Up-Down (UD) key1 → key2
-        dd_time = round(press2 - press1, 3)  # Down-Down (DD) key1 → key2
-        uu_time = round(release2 - release1, 3)  # Up-Up (UU) key1 → key2
+        # Compute keystroke timing features
+        du_self = round(release1 - press1, 3)  # Down-Up (DU) of key1
+        dd_time = round(press2 - press1, 3)  # Down-Down (DD) between key1 and key2
+        du_time = round(release2 - press1, 3)  # Down-Up between key1 & key2
+        ud_time = round(press2 - release1, 3)  # Up-Down (UD) between key1 and key2
+        uu_time = round(release2 - release1, 3)  # Up-Up (UU) between key1 and key2
 
-        # 🚨 Ignore extreme values (>10s)
-        if any(t > 10 for t in [du_time, ud_time, dd_time, uu_time]):
-            print(f"⚠️ Ignoring extreme delay: {key1} → {key2} (DU = {du_time}s)")
+        # 🚨 Ignore extreme values (>5s)
+        if any(t > 5 for t in [du_self, dd_time, du_time, ud_time, uu_time]):
+            print(f"⚠️ Ignoring extreme delay: {key1} → {key2}")
             continue
 
         # Save the computed values
-        keystroke_data.append([key1, key2, du_time, ud_time, dd_time, uu_time])
-
-        # Print debug info
-        print(f"{key1} → {key2}  | {du_time}  | {ud_time}  | {dd_time}  | {uu_time}")
+        keystroke_data.append([participant_id, session_number, key1, key2, du_self, dd_time, du_time, ud_time, uu_time])
 
     save_to_csv(keystroke_data)
 
 def save_to_csv(data):
     """Save processed keystroke features to CSV."""
-    with open(processed_file, mode="w", newline="") as file:
+    with open(processed_file, mode="a", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["key1", "key2", "DU.key1.key2", "UD.key1.key2", "DD.key1.key2", "UU.key1.key2"])
+        
+        # Write header if new file
+        if file.tell() == 0:
+            writer.writerow(["participant", "session", "key1", "key2", "DU.key1.key1", "DD.key1.key2", "DU.key1.key2", "UD.key1.key2", "UU.key1.key2"])
+        
         writer.writerows(data)
 
     print(f"✅ Processed keystroke features saved to {processed_file}")
