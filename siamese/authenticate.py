@@ -1,14 +1,15 @@
-import os
-import numpy as np
 import pandas as pd
+import os
+import time
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras import backend as K
 from pynput import keyboard
-from data_loader import extract_keystroke_features  # ✅ Use same extraction function
+from data_loader import extract_keystroke_features  # ✅ Use existing function
 
-# ✅ Fixed feature order (must match training)
-FEATURE_KEYS = [
+# ✅ Fixed feature order (must match generate_embeddings.py)
+FIXED_FEATURE_KEYS = [
     "avg_dwell_time", "std_dwell_time",
     "avg_flight_time", "std_flight_time",
     "avg_latency", "std_latency",
@@ -17,159 +18,146 @@ FEATURE_KEYS = [
 
 @tf.keras.utils.register_keras_serializable()
 def l1_distance(vects):
-    """Computes L1 (Manhattan distance) between two input vectors."""
+    """Computes L1 distance (Manhattan distance) between two input vectors."""
     x, y = vects
     return K.abs(x - y)
 
-# ✅ Step 1: Load Model & Stored Features
-def load_model_and_features():
-    """Loads the trained Siamese model and stored user feature vectors."""
-    try:
-        print("📥 Loading model and feature vectors...")
-        siamese_model = load_model("models/siamese_model.h5", custom_objects={"l1_distance": l1_distance})
-        user_feature_vectors = np.load("user_features.npy", allow_pickle=True).item()
-        print("✅ Model and user feature vectors loaded successfully!")
-        return siamese_model, user_feature_vectors
-    except Exception as e:
-        print(f"❌ Error loading model or features: {e}")
-        exit()
+# ✅ Step 1: Load Model & User Features
+try:
+    print("📥 Loading model and user features...")
+    siamese_model = load_model("models/siamese_model.h5", custom_objects={"l1_distance": l1_distance})
+    expected_input_shape = siamese_model.input_shape[0][-1]  # ✅ Get expected feature size
+    user_features = np.load("user_features.npy", allow_pickle=True).item()  # ✅ Load raw user features
+    print(f"✅ Model and user features loaded successfully (Expected Input Shape: {expected_input_shape})")
+except Exception as e:
+    print(f"❌ Error loading model or user features: {e}")
+    exit()
 
-# ✅ Step 2: Collect Keystroke Data (SAME AS collect_data.py)
+# ✅ Step 2: Collect Keystroke Data
 def collect_keystroke_data():
-    """Records user keystrokes for authentication using the same logic as `collect_data.py`."""
-    
+    """Collects keystroke timing data from user input."""
     keystrokes = []
-    down_times = {}  # ✅ Stores key press timestamps
-    up_times = {}  # ✅ Stores key release timestamps
-    prev_key = None
+    press_times = {}  # ✅ Store key press timestamps
+    release_times = {}  # ✅ Store key release timestamps
     finished = False
 
     def on_press(key):
-        nonlocal prev_key, finished
-
+        """Store key press timestamp."""
+        nonlocal finished
         if key == keyboard.Key.enter:
             finished = True
-            return False  # ✅ Stop listener when Enter is pressed
+            return False
 
         try:
             key_name = key.char
         except AttributeError:
             key_name = str(key).replace('Key.', '')
 
-        # ✅ Store key press timestamp
-        down_times[key_name] = pd.Timestamp.now()
-
-        # ✅ Compute Flight Time (DD) & Latency (UD)
-        dd_time = (down_times[key_name] - down_times.get(prev_key, down_times[key_name])).total_seconds() if prev_key else 0.0
-        ud_time = (down_times[key_name] - up_times.get(prev_key, down_times[key_name])).total_seconds() if prev_key else 0.0
-
-        keystrokes.append({
-            'key1': prev_key if prev_key else key_name,
-            'key2': key_name,
-            'DU.key1.key1': 0.0,  # Placeholder (updated on release)
-            'DD.key1.key2': dd_time,
-            'UD.key1.key2': ud_time,
-            'UU.key1.key2': 0.0  # Placeholder
-        })
-
-        prev_key = key_name  # ✅ Update previous key
+        press_times[key_name] = time.time()  # ✅ Store press timestamp
 
     def on_release(key):
+        """Store key release timestamp."""
         try:
             key_name = key.char
         except AttributeError:
             key_name = str(key).replace('Key.', '')
 
-        up_times[key_name] = pd.Timestamp.now()  # ✅ Store release time
+        release_times[key_name] = time.time()  # ✅ Store release timestamp
 
-        # ✅ Compute Dwell Time (DU)
-        if key_name in down_times:
-            dwell_time = (up_times[key_name] - down_times[key_name]).total_seconds()
-            for k in keystrokes:
-                if k['key1'] == key_name:
-                    k['DU.key1.key1'] = dwell_time  # ✅ Update dwell time
-
-        # ✅ Compute Up-Up Time (UU)
-        last_up_time = max(up_times.values(), default=up_times[key_name])
-        uu_time = (up_times[key_name] - last_up_time).total_seconds() if last_up_time else 0.0
-
-        if keystrokes:
-            keystrokes[-1]['UU.key1.key2'] = uu_time
-
-    print("\n⌨️ Type for authentication (Press Enter when done):")
+    # ✅ Start collecting keystrokes
+    print("\n⌨️ Please type to verify your identity (Press Enter when done):")
     with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
         while not finished:
-            pass  # ✅ Wait for Enter key
+            pass  # ✅ Wait until Enter is pressed
+
+    # ✅ Process keystroke data
+    keys = list(press_times.keys())
+    for i in range(len(keys) - 1):
+        key1, key2 = keys[i], keys[i + 1]
+        
+        if key1 in press_times and key1 in release_times and key2 in press_times:
+            du_time = round(release_times[key1] - press_times[key1], 3)
+            dd_time = round(press_times[key2] - press_times[key1], 3)
+            ud_time = round(press_times[key2] - release_times[key1], 3)
+            uu_time = round(release_times[key2] - release_times[key1], 3) if key2 in release_times else 0
+
+            keystrokes.append({
+                'key1': key1,
+                'key2': key2,
+                'DU.key1.key1': du_time,
+                'DD.key1.key2': dd_time,
+                'UD.key1.key2': ud_time,
+                'UU.key1.key2': uu_time
+            })
 
     return keystrokes
 
-# ✅ Step 3: Extract Features from Keystroke Data
-def extract_features_from_keystrokes(keystrokes):
-    """Extracts keystroke features using the same feature extraction as training."""
+# ✅ Step 3: Extract Features from Keystrokes
+def extract_features(keystrokes):
+    """Extracts keystroke features using existing function."""
     if not keystrokes:
         print("❌ No valid keystroke data collected")
         return None
 
     df_keystrokes = pd.DataFrame(keystrokes)
+    print(f"✅ Converted keystrokes to DataFrame with shape: {df_keystrokes.shape}")
+
+    # ✅ Extract features using **existing function**
     features = extract_keystroke_features(df_keystrokes)
+    print(f"🔍 Debug: Extracted features -> Type: {type(features)}, Value: {features}")
 
-    if not features:
-        print("❌ No valid features extracted")
-        return None
+    # ✅ Convert to numerical vector (shape: (1, 8))
+    numerical_features = np.array([float(features.get(key, 0.0)) for key in FIXED_FEATURE_KEYS], dtype=np.float32).reshape(1, -1)
 
-    # ✅ Convert to numerical feature vector (same order as training)
-    numerical_features = np.array([float(features.get(key, 0.0)) for key in FEATURE_KEYS], dtype=np.float32).reshape(1, -1)
-
-    print(f"✅ Feature vector generated: {numerical_features.shape}")
+    print(f"✅ Generated feature vector shape: {numerical_features.shape}")
     return numerical_features
 
-# ✅ Step 4: Compare Features with Stored User Data
-def compare_features(new_features, user_id, user_feature_vectors, siamese_model):
-    """Compares new features with stored user feature vectors using the trained model."""
-    stored_features = user_feature_vectors.get(user_id)
-    if stored_features is None:
-        print(f"❌ User {user_id} not found in database.")
+# ✅ Step 4: Authenticate User
+def authenticate_user():
+    """Main authentication flow."""
+    print("\n🔍 Available users:", list(user_features.keys()))
+    user_id = input("Enter your user ID: ").strip()
+    if user_id not in user_features:
+        print("❌ User ID not found in database")
         return False
 
-    # ✅ Convert stored features to NumPy array (same order as training)
-    stored_features = np.array([float(stored_features[key]) for key in FEATURE_KEYS], dtype=np.float32).reshape(1, -1)
-    new_features = new_features.reshape(1, -1)
+    print("\n⌨️ Please type to verify your identity...")
+    keystrokes = collect_keystroke_data()
+    features = extract_features(keystrokes)
 
-    print(f"✅ Comparing vectors - Stored: {stored_features.shape}, New: {new_features.shape}")
+    print(f"🔍 Debug: Extracted features -> Type: {type(features)}, Value: {features}")
 
-    # ✅ Compute similarity using Siamese model
-    similarity = siamese_model.predict([stored_features, new_features], verbose=0)[0][0]
+    # ✅ Convert features to match format in `user_features.npy`
+    numerical_features = []
+    for key in FIXED_FEATURE_KEYS:
+        try:
+            value = features.get(key, 0.0)
+            numerical_features.append(float(value))
+        except (ValueError, TypeError):
+            print(f"⚠️ Invalid value for feature '{key}': {value}")
+            numerical_features.append(0.0)
 
-    print(f"\n📊 Similarity Score: {similarity:.3f}")
+    # ✅ Create feature vector with shape (8,)
+    feature_vector = np.array(numerical_features, dtype=np.float32).reshape(1, -1)
+    
+    # ✅ Get stored features and reshape to (1, 8)
+    stored_features = np.array([float(user_features[user_id].get(key, 0.0)) for key in FIXED_FEATURE_KEYS], dtype=np.float32).reshape(1, -1)
+    
+    print(f"✅ Comparing features - Stored: {stored_features.shape}, New: {feature_vector.shape}")
+    
+    # ✅ Use siamese model to compare user’s feature vector
+    similarity = siamese_model.predict([feature_vector, stored_features], verbose=0)[0][0]
 
-    threshold = 0.7  # ✅ Adjust threshold based on validation results
+    # ✅ Authentication decision
+    threshold = 0.7
+    print(f"\n📊 Similarity score: {similarity:.3f}")
+    
     if similarity >= threshold:
         print("✅ Authentication successful!")
         return True
     else:
         print("❌ Authentication failed")
         return False
-
-# ✅ Step 5: Run Authentication Flow
-def authenticate_user():
-    """Handles full authentication flow."""
-    siamese_model, user_feature_vectors = load_model_and_features()
-
-    print("\n🔍 Available users:", list(user_feature_vectors.keys()))
-    user_id = input("Enter your user ID: ").strip()
-
-    if user_id not in user_feature_vectors:
-        print("❌ User ID not found in database")
-        return False
-
-    print("\n⌨️ Type to verify your identity...")
-    keystrokes = collect_keystroke_data()
-
-    new_features = extract_features_from_keystrokes(keystrokes)
-    if new_features is None:
-        return False
-
-    return compare_features(new_features, user_id, user_feature_vectors, siamese_model)
 
 # ✅ Run Authentication
 if __name__ == "__main__":
