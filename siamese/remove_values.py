@@ -14,7 +14,7 @@ timing_columns = ["DU.key1.key1", "DD.key1.key2", "DU.key1.key2", "UD.key1.key2"
 df[timing_columns] = df[timing_columns].apply(pd.to_numeric, errors="coerce")
 
 # 🔹 Apply filtering: Drop rows where **any** value is outside -5 < x < 5
-filtered_df = df[df[timing_columns].apply(lambda row: row.between(-5, 5).all(), axis=1)]
+filtered_df = df[df[timing_columns].apply(lambda row: row.between(-10, 10).all(), axis=1)]
 
 # 🔹 Save the cleaned dataset
 filtered_df.to_csv(output_file, index=False, header=True)
