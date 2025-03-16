@@ -64,8 +64,18 @@ X1_train_data, X1_val_data, X2_train_data, X2_val_data, Y_train_data, Y_val_data
     X1_train_array, X2_train_array, Y_train_array, test_size=0.2, random_state=42
 )
 
-print(f"✅ Training set size: {len(X1_train_data)} pairs")
-print(f"✅ Validation set size: {len(X1_val_data)} pairs")
+# Debugging: Print exact pair counts
+print("\n🔍 Train-Test Split Debugging:")
+print(f"✅ Total Training Pairs: {len(X1_train_data)}")
+print(f"✅ Total Validation Pairs: {len(X1_val_data)}")
+print(f"🔹 Expected Total Pairs (Train + Validation): {len(X1_train_data) + len(X1_val_data)}")
+print(f"🔹 Original Pairs Before Split: {len(X1_train_array)}")
+
+# Extra Check: Ensure the split adds up
+if len(X1_train_data) + len(X1_val_data) != len(X1_train_array):
+    print("❌ WARNING: Some pairs may be missing after splitting!")
+else:
+    print("✅ Pair split looks correct.")
 
 # 🔹 Step 4: Define and Register `l1_distance`
 @tf.keras.utils.register_keras_serializable()
@@ -125,6 +135,6 @@ print(f"✅ Final validation accuracy: {val_accuracy:.4f}")
 
 # 🔹 Step 8: Save the Model
 print("💾 Saving the trained model...")
-siamese_network.siamese_model.save("models/siamese_model.h5")
+siamese_network.siamese_model.save("models/siamese_model.keras")
 
 print("✅ Siamese network training complete. Model saved successfully!")

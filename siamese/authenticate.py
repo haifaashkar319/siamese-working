@@ -6,6 +6,7 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras import backend as K
 from pynput import keyboard
+from collections import deque
 from data_loader import extract_keystroke_features  # ✅ Use existing function
 
 # ✅ Fixed feature order (must match generate_embeddings.py)
@@ -25,20 +26,19 @@ def l1_distance(vects):
 # ✅ Step 1: Load Model & User Features
 try:
     print("📥 Loading model and user features...")
-    siamese_model = load_model("models/siamese_model.h5", custom_objects={"l1_distance": l1_distance})
+    siamese_model = load_model("models/siamese_model.keras", custom_objects={"l1_distance": l1_distance})
     expected_input_shape = siamese_model.input_shape[0][-1]  # ✅ Get expected feature size
     user_features = np.load("user_features.npy", allow_pickle=True).item()  # ✅ Load raw user features
-    # print(f"✅ Model and user features loaded successfully (Expected Input Shape: {expected_input_shape})")
+    print(f"✅ Model and user features loaded successfully (Expected Input Shape: {expected_input_shape})")
 except Exception as e:
     print(f"❌ Error loading model or user features: {e}")
     exit()
 
-# ✅ Step 2: Collect Keystroke Data
+# ✅ Step 2: Collect Keystroke Data (Fixed)
 def collect_keystroke_data():
     """Collects keystroke timing data from user input."""
-    keystrokes = []
-    press_times = {}  # ✅ Store key press timestamps
-    release_times = {}  # ✅ Store key release timestamps
+    keystroke_events = deque()  # ✅ Stores (key, press_time, release_time)
+    press_times = {}  # ✅ Stores latest key press timestamps
     finished = False
 
     def on_press(key):
@@ -46,7 +46,7 @@ def collect_keystroke_data():
         nonlocal finished
         if key == keyboard.Key.enter:
             finished = True
-            return False
+            return False  # ✅ Stop listener when Enter is pressed
 
         try:
             key_name = key.char
@@ -56,13 +56,16 @@ def collect_keystroke_data():
         press_times[key_name] = time.time()  # ✅ Store press timestamp
 
     def on_release(key):
-        """Store key release timestamp."""
+        """Store key release timestamp and save keystroke event."""
         try:
             key_name = key.char
         except AttributeError:
             key_name = str(key).replace('Key.', '')
 
-        release_times[key_name] = time.time()  # ✅ Store release timestamp
+        release_time = time.time()
+        if key_name in press_times:
+            keystroke_events.append((key_name, press_times[key_name], release_time))  # ✅ Save event
+            del press_times[key_name]  # ✅ Remove used press time
 
     # ✅ Start collecting keystrokes
     print("\n⌨️ Please type to verify your identity (Press Enter when done):")
@@ -70,26 +73,41 @@ def collect_keystroke_data():
         while not finished:
             pass  # ✅ Wait until Enter is pressed
 
-    # ✅ Process keystroke data
-    keys = list(press_times.keys())
-    for i in range(len(keys) - 1):
-        key1, key2 = keys[i], keys[i + 1]
-        
-        if key1 in press_times and key1 in release_times and key2 in press_times:
-            du_time = round(release_times[key1] - press_times[key1], 3)
-            dd_time = round(press_times[key2] - press_times[key1], 3)
-            ud_time = round(press_times[key2] - release_times[key1], 3)
-            uu_time = round(release_times[key2] - release_times[key1], 3) if key2 in release_times else 0
+    # ✅ Ensure keystrokes are sorted by press time
+    sorted_keystrokes = sorted(keystroke_events, key=lambda x: x[1])
 
-            keystrokes.append({
-                'key1': key1,
-                'key2': key2,
-                'DU.key1.key1': du_time,
-                'DD.key1.key2': dd_time,
-                'UD.key1.key2': ud_time,
-                'UU.key1.key2': uu_time
-            })
+    # 🔍 Debugging: Print all collected key timestamps
+    # print(f"🔍 Sorted Keystroke Events: {keystroke_events}")
 
+    keystrokes = []
+    for i in range(len(keystroke_events) - 1):
+        key1, press1, release1 = keystroke_events[i]
+        key2, press2, release2 = keystroke_events[i + 1]
+
+        # ✅ Compute keystroke timing features
+        du_self = round(release1 - press1, 3)  # ✅ Down-Up (DU) of key1
+        dd_time = round(press2 - press1, 3)  # ✅ Down-Down (DD) between key1 and key2
+        du_time = round(release2 - press1, 3)  # ✅ Down-Up between key1 & key2
+        ud_time = round(press2 - release1, 3)  # ✅ Up-Down (UD) between key1 and key2
+        uu_time = round(release2 - release1, 3)  # ✅ Up-Up (UU) between key1 and key2
+
+        # 🚨 Ignore extreme or negative delays
+        if any(t > 5 or t < -5 for t in [du_self, dd_time, du_time, ud_time, uu_time]):
+            print(f"⚠️ Ignoring extreme/negative delay: {key1} → {key2}")
+            continue
+
+        # ✅ Save computed keystroke values
+        keystrokes.append({
+            "key1": key1, "key2": key2,
+            "DU.key1.key1": du_self,
+            "DD.key1.key2": dd_time,
+            "DU.key1.key2": du_time,
+            "UD.key1.key2": ud_time,
+            "UU.key1.key2": uu_time
+        })
+
+    # 🔍 Debugging: Print final collected keystroke data
+    print(f"✅ Collected Keystroke Data: {keystrokes}")
     return keystrokes
 
 # ✅ Step 3: Extract Features from Keystrokes
@@ -100,16 +118,10 @@ def extract_features(keystrokes):
         return None
 
     df_keystrokes = pd.DataFrame(keystrokes)
-    # print(f"✅ Converted keystrokes to DataFrame with shape: {df_keystrokes.shape}")
-
-    # ✅ Extract features using **existing function**
     features = extract_keystroke_features(df_keystrokes)
-    # print(f"🔍 Debug: Extracted features -> Type: {type(features)}, Value: {features}")
 
     # ✅ Convert to numerical vector (shape: (1, 8))
     numerical_features = np.array([float(features.get(key, 0.0)) for key in FIXED_FEATURE_KEYS], dtype=np.float32).reshape(1, -1)
-
-    # print(f"✅ Generated feature vector shape: {numerical_features.shape}")
     return numerical_features
 
 # ✅ Step 4: Authenticate User
@@ -117,7 +129,7 @@ def authenticate_user():
     """Main authentication flow."""
     print("\n🔍 Available users:", list(user_features.keys()))
     user_id = input("Enter your user ID: ").strip()
-    
+
     if user_id not in user_features:
         print("❌ User ID not found in database")
         return False
@@ -125,10 +137,6 @@ def authenticate_user():
     keystrokes = collect_keystroke_data()
     features = extract_features(keystrokes)
 
-    # 🔍 Debugging print
-    # print(f"🔍 Debug: Extracted features -> Type: {type(features)}, Value: {features}")
-
-    # ✅ Ensure `features` is a NumPy array
     if not isinstance(features, np.ndarray):
         print(f"❌ Unexpected features format: {type(features)}")
         return False  # Exit if features are invalid
@@ -141,8 +149,6 @@ def authenticate_user():
         [float(user_features[user_id].get(key, 0.0)) for key in FIXED_FEATURE_KEYS], 
         dtype=np.float32
     ).reshape(1, -1)
-    
-    # print(f"✅ Comparing features - Stored: {stored_features.shape}, New: {feature_vector.shape}")
 
     # ✅ Use Siamese model to compare user’s feature vector
     similarity = siamese_model.predict([feature_vector, stored_features], verbose=0)[0][0]

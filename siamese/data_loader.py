@@ -97,10 +97,16 @@ def create_training_pairs(features_by_session):
     labels = []
     users = list(set([k.split('_s')[0] for k in features_by_session.keys()]))  # Extract unique users
     
+    total_positive = 0
+    total_negative = 0
+
     for user in users:
         # Get all session keys for this user
         user_sessions = [k for k in features_by_session.keys() if k.startswith(user)]
         
+        # Debug: Print session count per user
+        print(f"🟢 User: {user} → Sessions Found: {len(user_sessions)}")
+
         # Create positive pairs (same user, different sessions)
         for i in range(len(user_sessions)):
             for j in range(i + 1, len(user_sessions)):
@@ -108,6 +114,7 @@ def create_training_pairs(features_by_session):
                 vec2 = np.array(list(features_by_session[user_sessions[j]].values()), dtype=np.float32)
                 pairs.append((vec1, vec2))
                 labels.append(1)  # Same user -> Positive pair
+                total_positive += 1
 
                 # Create a negative pair with a different user
                 other_user = np.random.choice([u for u in users if u != user])
@@ -115,7 +122,12 @@ def create_training_pairs(features_by_session):
                 vec_impostor = np.array(list(features_by_session[other_session].values()), dtype=np.float32)
                 pairs.append((vec1, vec_impostor))
                 labels.append(0)  # Different users -> Negative pair
-       
+                total_negative += 1
+
+    # Debug: Print final pair count
+    print(f"\n🔹 Total Positive Pairs: {total_positive}")
+    print(f"🔹 Total Negative Pairs: {total_negative}")
+    print(f"🔹 Total Training Pairs: {total_positive + total_negative}")
 
     return np.array(pairs), np.array(labels)
 
