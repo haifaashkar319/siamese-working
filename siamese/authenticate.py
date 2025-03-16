@@ -28,7 +28,7 @@ try:
     siamese_model = load_model("models/siamese_model.h5", custom_objects={"l1_distance": l1_distance})
     expected_input_shape = siamese_model.input_shape[0][-1]  # ✅ Get expected feature size
     user_features = np.load("user_features.npy", allow_pickle=True).item()  # ✅ Load raw user features
-    print(f"✅ Model and user features loaded successfully (Expected Input Shape: {expected_input_shape})")
+    # print(f"✅ Model and user features loaded successfully (Expected Input Shape: {expected_input_shape})")
 except Exception as e:
     print(f"❌ Error loading model or user features: {e}")
     exit()
@@ -100,16 +100,16 @@ def extract_features(keystrokes):
         return None
 
     df_keystrokes = pd.DataFrame(keystrokes)
-    print(f"✅ Converted keystrokes to DataFrame with shape: {df_keystrokes.shape}")
+    # print(f"✅ Converted keystrokes to DataFrame with shape: {df_keystrokes.shape}")
 
     # ✅ Extract features using **existing function**
     features = extract_keystroke_features(df_keystrokes)
-    print(f"🔍 Debug: Extracted features -> Type: {type(features)}, Value: {features}")
+    # print(f"🔍 Debug: Extracted features -> Type: {type(features)}, Value: {features}")
 
     # ✅ Convert to numerical vector (shape: (1, 8))
     numerical_features = np.array([float(features.get(key, 0.0)) for key in FIXED_FEATURE_KEYS], dtype=np.float32).reshape(1, -1)
 
-    print(f"✅ Generated feature vector shape: {numerical_features.shape}")
+    # print(f"✅ Generated feature vector shape: {numerical_features.shape}")
     return numerical_features
 
 # ✅ Step 4: Authenticate User
@@ -117,41 +117,40 @@ def authenticate_user():
     """Main authentication flow."""
     print("\n🔍 Available users:", list(user_features.keys()))
     user_id = input("Enter your user ID: ").strip()
+    
     if user_id not in user_features:
         print("❌ User ID not found in database")
         return False
 
-    print("\n⌨️ Please type to verify your identity...")
     keystrokes = collect_keystroke_data()
     features = extract_features(keystrokes)
 
-    print(f"🔍 Debug: Extracted features -> Type: {type(features)}, Value: {features}")
+    # 🔍 Debugging print
+    # print(f"🔍 Debug: Extracted features -> Type: {type(features)}, Value: {features}")
 
-    # ✅ Convert features to match format in `user_features.npy`
-    numerical_features = []
-    for key in FIXED_FEATURE_KEYS:
-        try:
-            value = features.get(key, 0.0)
-            numerical_features.append(float(value))
-        except (ValueError, TypeError):
-            print(f"⚠️ Invalid value for feature '{key}': {value}")
-            numerical_features.append(0.0)
+    # ✅ Ensure `features` is a NumPy array
+    if not isinstance(features, np.ndarray):
+        print(f"❌ Unexpected features format: {type(features)}")
+        return False  # Exit if features are invalid
 
-    # ✅ Create feature vector with shape (8,)
-    feature_vector = np.array(numerical_features, dtype=np.float32).reshape(1, -1)
+    # ✅ Reshape features to match expected input shape (1, 8)
+    feature_vector = features.reshape(1, -1)
     
     # ✅ Get stored features and reshape to (1, 8)
-    stored_features = np.array([float(user_features[user_id].get(key, 0.0)) for key in FIXED_FEATURE_KEYS], dtype=np.float32).reshape(1, -1)
+    stored_features = np.array(
+        [float(user_features[user_id].get(key, 0.0)) for key in FIXED_FEATURE_KEYS], 
+        dtype=np.float32
+    ).reshape(1, -1)
     
-    print(f"✅ Comparing features - Stored: {stored_features.shape}, New: {feature_vector.shape}")
-    
-    # ✅ Use siamese model to compare user’s feature vector
+    # print(f"✅ Comparing features - Stored: {stored_features.shape}, New: {feature_vector.shape}")
+
+    # ✅ Use Siamese model to compare user’s feature vector
     similarity = siamese_model.predict([feature_vector, stored_features], verbose=0)[0][0]
 
     # ✅ Authentication decision
     threshold = 0.7
     print(f"\n📊 Similarity score: {similarity:.3f}")
-    
+
     if similarity >= threshold:
         print("✅ Authentication successful!")
         return True
