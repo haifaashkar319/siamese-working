@@ -2,10 +2,11 @@ import pandas as pd
 import numpy as np
 import os
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
 
 ### ----------------------- Data Loading & Preprocessing -----------------------
 
-def load_data(file_path="FreeDB.csv"):
+def load_data(file_path="FreeDB2.csv"):
     """Load the keystroke dataset."""
     file_path = os.path.join(os.path.dirname(__file__), file_path)
     df = pd.read_csv(file_path, low_memory=False)
@@ -23,7 +24,7 @@ def validate_data(df):
     return df
 
 def preprocess_data(df):
-    """Convert columns to numeric and sort the dataset."""
+    """Convert columns to numeric and apply Min-Max Normalization per user."""
     timing_columns = ["DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"]
     
     for col in timing_columns:
@@ -31,7 +32,7 @@ def preprocess_data(df):
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df.dropna(subset=["DU.key1.key1"])  # Ensure required columns have values
-    df = df.sort_values(by=["participant", "session"])  # Maintain session order
+    df = df.sort_values(by=["participant", "session"])  
     
     # Apply Min-Max Normalization per user
     scaler = MinMaxScaler()
@@ -49,10 +50,7 @@ def extract_features_for_session(df):
         if len(group) < 3:  # Skip sessions with insufficient keystrokes
             continue
             
-        # Extract statistical features
         features = extract_keystroke_features(group)
-        
-        # Store features with participant and session key
         session_key = f"{participant}_s{session}"
         features_by_session[session_key] = features
 
@@ -62,7 +60,6 @@ def extract_keystroke_features(group):
     """Compute statistical keystroke features for a given participant or session."""
     timing_columns = ["DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"]
     
-    # Ensure numeric conversion
     for col in timing_columns:
         if col in group.columns:
             group[col] = pd.to_numeric(group[col], errors="coerce")
@@ -72,62 +69,98 @@ def extract_keystroke_features(group):
     if len(group) < 3:
         return {}
 
-    # Compute statistical features
-    dwell_times = group["DU.key1.key1"].dropna().tolist()
-    flight_times = group["DD.key1.key2"].dropna().tolist()
-    latencies = group["UD.key1.key2"].dropna().tolist() if "UD.key1.key2" in group.columns else []
-    uu_timings = group["UU.key1.key2"].dropna().tolist() if "UU.key1.key2" in group.columns else []
-
     return {
-        "avg_dwell_time": np.nan_to_num(np.mean(dwell_times), nan=0),
-        "std_dwell_time": np.nan_to_num(np.std(dwell_times), nan=0),
-        "avg_flight_time": np.nan_to_num(np.mean(flight_times), nan=0),
-        "std_flight_time": np.nan_to_num(np.std(flight_times), nan=0),
-        "avg_latency": np.nan_to_num(np.mean(latencies), nan=0),
-        "std_latency": np.nan_to_num(np.std(latencies), nan=0),
-        "avg_UU_time": np.nan_to_num(np.mean(uu_timings), nan=0),
-        "std_UU_time": np.nan_to_num(np.std(uu_timings), nan=0)
+        "avg_dwell_time": np.mean(group["DU.key1.key1"]),
+        "std_dwell_time": np.std(group["DU.key1.key1"]),
+        "avg_flight_time": np.mean(group["DD.key1.key2"]),
+        "std_flight_time": np.std(group["DD.key1.key2"]),
+        "avg_latency": np.mean(group["UD.key1.key2"]) if "UD.key1.key2" in group.columns else 0,
+        "std_latency": np.std(group["UD.key1.key2"]) if "UD.key1.key2" in group.columns else 0,
+        "avg_UU_time": np.mean(group["UU.key1.key2"]) if "UU.key1.key2" in group.columns else 0,
+        "std_UU_time": np.std(group["UU.key1.key2"]) if "UU.key1.key2" in group.columns else 0
     }
 
-### ----------------------- Pair Generation for Model Training -----------------------
+### ----------------------- Creating Training Pairs -----------------------
 
-def create_training_pairs(features_by_session):
+def create_training_pairs(features_by_session, num_negative_per_positive=5):
     """Create positive and negative training pairs for a Siamese network."""
     pairs = []
     labels = []
-    users = list(set([k.split('_s')[0] for k in features_by_session.keys()]))  # Extract unique users
-    
+    users = list(set([k.split('_s')[0] for k in features_by_session.keys()]))
+
     total_positive = 0
     total_negative = 0
 
     for user in users:
-        # Get all session keys for this user
         user_sessions = [k for k in features_by_session.keys() if k.startswith(user)]
-        
-        # Debug: Print session count per user
-        print(f"🟢 User: {user} → Sessions Found: {len(user_sessions)}")
 
-        # Create positive pairs (same user, different sessions)
         for i in range(len(user_sessions)):
             for j in range(i + 1, len(user_sessions)):
                 vec1 = np.array(list(features_by_session[user_sessions[i]].values()), dtype=np.float32)
                 vec2 = np.array(list(features_by_session[user_sessions[j]].values()), dtype=np.float32)
+                
                 pairs.append((vec1, vec2))
-                labels.append(1)  # Same user -> Positive pair
+                labels.append(1)  # Positive pair
                 total_positive += 1
 
-                # Create a negative pair with a different user
-                other_user = np.random.choice([u for u in users if u != user])
-                other_session = np.random.choice([k for k in features_by_session.keys() if k.startswith(other_user)])
-                vec_impostor = np.array(list(features_by_session[other_session].values()), dtype=np.float32)
-                pairs.append((vec1, vec_impostor))
-                labels.append(0)  # Different users -> Negative pair
-                total_negative += 1
+                for _ in range(num_negative_per_positive):
+                    other_user = np.random.choice([u for u in users if u != user])
+                    other_session = np.random.choice([k for k in features_by_session.keys() if k.startswith(other_user)])
+                    vec_impostor = np.array(list(features_by_session[other_session].values()), dtype=np.float32)
 
-    # Debug: Print final pair count
+                    pairs.append((vec1, vec_impostor))
+                    labels.append(0)  # Negative pair
+                    total_negative += 1
+
     print(f"\n🔹 Total Positive Pairs: {total_positive}")
-    print(f"🔹 Total Negative Pairs: {total_negative}")
-    print(f"🔹 Total Training Pairs: {total_positive + total_negative}")
+    print(f"🔹 Total Negative Pairs: {total_negative} (Each positive has {num_negative_per_positive} negatives)")
+    print(f"🔹 Total Training Pairs: {total_positive + total_negative}\n")
+
+    return np.array(pairs), np.array(labels)
+
+### ----------------------- Creating Testing Pairs -----------------------
+
+def create_testing_pairs(features_by_session, test_size=0.2, num_negative_per_positive=5):
+    """Create positive and negative testing pairs from unseen users."""
+    pairs = []
+    labels = []
+    
+    users = list(set([k.split('_s')[0] for k in features_by_session.keys()]))
+    
+    train_users, test_users = train_test_split(users, test_size=test_size, random_state=42)
+
+    print(f"🛠 Test Set Users: {len(test_users)} (Unseen during training)")
+
+    total_positive = 0
+    total_negative = 0
+
+    for user in test_users:
+        user_sessions = [k for k in features_by_session.keys() if k.startswith(user)]
+
+        if len(user_sessions) < 2:
+            continue
+
+        for i in range(len(user_sessions)):
+            for j in range(i + 1, len(user_sessions)):
+                vec1 = np.array(list(features_by_session[user_sessions[i]].values()), dtype=np.float32)
+                vec2 = np.array(list(features_by_session[user_sessions[j]].values()), dtype=np.float32)
+
+                pairs.append((vec1, vec2))
+                labels.append(1)  # Positive pair
+                total_positive += 1
+
+                for _ in range(num_negative_per_positive):
+                    other_user = np.random.choice([u for u in test_users if u != user])
+                    other_session = np.random.choice([k for k in features_by_session.keys() if k.startswith(other_user)])
+                    vec_impostor = np.array(list(features_by_session[other_session].values()), dtype=np.float32)
+
+                    pairs.append((vec1, vec_impostor))
+                    labels.append(0)  # Negative pair
+                    total_negative += 1
+
+    print(f"\n🔹 Total Positive Test Pairs: {total_positive}")
+    print(f"🔹 Total Negative Test Pairs: {total_negative}")
+    print(f"🔹 Total Testing Pairs: {total_positive + total_negative}\n")
 
     return np.array(pairs), np.array(labels)
 
@@ -142,11 +175,14 @@ if __name__ == "__main__":
     
     print("🔍 Preprocessing data (Min-Max Normalization)...")
     df = preprocess_data(df)
-    
+
     print("🧑‍💻 Extracting features per session...")
     features_by_session = extract_features_for_session(df)
     
     print("📊 Creating training pairs...")
     X_train, Y_train = create_training_pairs(features_by_session)
 
-    print(f"✅ Training data ready! Generated {len(X_train)} pairs.")
+    print("📊 Creating testing pairs...")
+    X_test, Y_test = create_testing_pairs(features_by_session)
+
+    print(f"✅ Training Pairs: {len(X_train)}, Testing Pairs: {len(X_test)}")
