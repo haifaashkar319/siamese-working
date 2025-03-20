@@ -74,14 +74,9 @@ class SiameseNetwork:
         """
         return self.siamese_model.evaluate(x, y, batch_size=batch_size, **kwargs)
 
-    def predict(self, x):
-        """
-        Predicts the similarity score between two keystroke feature vectors.
+    def predict(self, x1, x2):
+        return self.siamese_model.predict([x1, x2])
 
-        :param x: Feature pair (two feature vectors).
-        :return: Similarity score (0 = different, 1 = identical).
-        """
-        return self.siamese_model.predict([x[:, 0], x[:, 1]])
 
     def load_weights(self, checkpoint_path):
         """
