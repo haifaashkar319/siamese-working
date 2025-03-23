@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-from data_loader import extract_features_for_session, load_data, validate_data, preprocess_data
+from data_loader import extract_features_for_session, load_data, validate_data
 
 
 ### ----------------------- Step 3: Extract Features from Dataset -----------------------
@@ -15,7 +15,6 @@ def extract_features(file_path="FreeDB2.csv"):
     df = validate_data(df)
 
     print("🔍 Preprocessing dataset (Applying Min-Max Normalization)...")
-    df = preprocess_data(df)
 
     print("🧑‍💻 Extracting features per session...")
     features_by_session = extract_features_for_session(df)

@@ -14,12 +14,18 @@ processed_file = "FreeDB2.csv"
 # Store raw keystroke timestamps
 keystroke_events = deque()  # Stores (key, press_time, release_time)
 press_times = {}  # Tracks latest press time
+press_count = 0  # Global counter for key presses
 
 def on_press(key):
-    """Record key press time."""
+    """Record key press time and debug the press count."""
+    global press_count
     key_name = key.char if hasattr(key, 'char') else key.name
     timestamp = time.time()
     press_times[key_name] = timestamp  # Store latest press time
+
+    # Increment and display the key press count
+    press_count += 1
+    print(f"DEBUG: Key pressed: {key_name}, Total keys pressed: {press_count}")
 
 def on_release(key):
     """Record key release time and store full event."""
