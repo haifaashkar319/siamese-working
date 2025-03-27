@@ -128,14 +128,14 @@ def create_head_model(embedding_shape):
     embedding_a = Input(shape=(embedding_shape[-1],))  
     embedding_b = Input(shape=(embedding_shape[-1],))  
 
-    # 🔹 Define the Lambda function with explicit output shape
+    #  Define the Lambda function with explicit output shape
     def l1_distance(vectors):
         x, y = vectors
         return K.abs(x - y)
 
     distance = Lambda(l1_distance, output_shape=lambda input_shape: input_shape[0])([embedding_a, embedding_b])
 
-    # 🔹 Final similarity score
+    #  Final similarity score
     output = Dense(1, activation='sigmoid')(distance)
 
     return Model([embedding_a, embedding_b], output)

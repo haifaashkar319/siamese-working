@@ -21,7 +21,7 @@ def validate_data(df):
     required_columns = {"participant", "session", "DU.key1.key1", "DD.key1.key2"}
     if not required_columns.issubset(df.columns):
         missing_cols = required_columns - set(df.columns)
-        raise KeyError(f"❌ Missing required columns: {missing_cols}")
+        raise KeyError(f" Missing required columns: {missing_cols}")
     return df
 
 ### ----------------------- Dynamic Threshold Calculation (IQR Method, Per User) -----------------------
@@ -198,7 +198,7 @@ def debug_feature_separation(pairs, users):
     sample1 = pairs[0][0]
     sample2 = pairs[0][0]
     identical_distance = np.abs(sample1 - sample2)
-    print(f"\n✅ Identical Sample L1 Distance (Expected ~0): {np.mean(identical_distance):.6f}")
+    print(f"\n Identical Sample L1 Distance (Expected ~0): {np.mean(identical_distance):.6f}")
     
     if len(users) > 1 and len(pairs) > 1:
         different_user_pair_idx = np.random.choice(len(pairs), 1, replace=False)[0]

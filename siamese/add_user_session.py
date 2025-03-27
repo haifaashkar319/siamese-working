@@ -37,9 +37,9 @@ def on_release(key):
         del press_times[key_name]  # Remove used press time
 
     if key == keyboard.Key.esc:
-        print("\n✅ Typing session complete. Saving raw data...")
+        print("\n Typing session complete. Saving raw data...")
         save_raw_keystrokes()
-        print("\n✅ Processing keystroke features...")
+        print("\n Processing keystroke features...")
         process_keystroke_data()
         return False  # Stop listener
 
@@ -55,7 +55,7 @@ def save_raw_keystrokes():
         for key, press_time, release_time in keystroke_events:
             writer.writerow([participant_id, session_number, key, press_time, release_time])
 
-    print(f"✅ Raw keystroke data saved to {raw_file}")
+    print(f" Raw keystroke data saved to {raw_file}")
 
 def process_keystroke_data():
     """Compute UD, DU, DD, UU features using the correct formula."""
@@ -72,7 +72,7 @@ def process_keystroke_data():
         ud_time = round(press2 - release1, 3)  # Up-Down (UD) between key1 and key2
         uu_time = round(release2 - release1, 3)  # Up-Up (UU) between key1 and key2
 
-        # 🚨 Ignore extreme values (>5s)
+        #  Ignore extreme values (>5s)
         if any(t > 5 for t in [du_self, dd_time, du_time, ud_time, uu_time]):
             print(f"⚠️ Ignoring extreme delay: {key1} → {key2}")
             continue
@@ -93,8 +93,8 @@ def save_to_csv(data):
         
         writer.writerows(data)
 
-    print(f"✅ Processed keystroke features saved to {processed_file}")
+    print(f" Processed keystroke features saved to {processed_file}")
 
-# 🔹 Run keystroke recording
+#  Run keystroke recording
 with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
     listener.join()

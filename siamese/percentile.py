@@ -53,8 +53,8 @@ def save_out_of_range_entries(df, output_file="out_of_range_entries.csv"):
     out_of_range_df = df[df["Problematic_Cols"] != ""].copy()
     out_of_range_df.to_csv(output_file, index=False)
 
-    print(f"✅ Found {len(out_of_range_df)} row(s) with out-of-range values.")
-    print(f"✅ Saved these rows (with Problematic_Cols) to: {output_file}")
+    print(f" Found {len(out_of_range_df)} row(s) with out-of-range values.")
+    print(f" Saved these rows (with Problematic_Cols) to: {output_file}")
 
 def parse_cols(problematic_str):
     """

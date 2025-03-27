@@ -119,13 +119,13 @@ def train_model(X1_train, X2_train, Y_train, X1_val, X2_val, Y_val, input_shape,
 
 if __name__ == "__main__":
     # Step 1: Load precomputed standardized features from CSV
-    print("📥 Loading precomputed feature vectors from features.csv...")
+    print(" Loading precomputed feature vectors from features.csv...")
     df_features = load_feature_vectors("features.csv")
     
     # Step 2: Create training pairs from the precomputed features
     pairs, labels = create_training_pairs_from_df(df_features)
     # Print a sample of 5 pairs with participant and session info
-    print("\n📊 Sample Training Pairs:")
+    print("\n Sample Training Pairs:")
     print ("\n Pairs legth:", len(pairs))
     print ("\n Psotive pairs:")
     for i in range(min(130, len(pairs))):
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     input_shape = (df_features.shape[1],)
     
     # Step 5: Train the Siamese network
-    print("🚀 Training the Siamese network...")
+    print(" Training the Siamese network...")
     model, history = train_model(
         X1_train, X2_train, Y_train,
         X1_val, X2_val, Y_val,
@@ -157,11 +157,11 @@ if __name__ == "__main__":
     )
     
     # Evaluate model performance on the validation set
-    print("\n📊 Evaluating model performance...")
+    print("\n Evaluating model performance...")
     val_loss, val_accuracy = model.evaluate([X1_val, X2_val], Y_val, verbose=1)
     print(f"Final validation accuracy: {val_accuracy:.4f}")
     print(f"Final validation loss: {val_loss:.4f}")
     
     # Save the trained model
-    print("💾 Saving the trained model...")
+    print(" Saving the trained model...")
     model.siamese_model.save("models/siamese_model.keras")

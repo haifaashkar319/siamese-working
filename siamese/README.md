@@ -113,7 +113,7 @@ filtered_df = df[df[timing_columns].apply(lambda row: row.between(-10, 10).all()
 # Save cleaned dataset
 filtered_df.to_csv("FreeDB2.csv", index=False)
 
-print(f"✅ Cleaned dataset saved as FreeDB2.csv")
+print(f" Cleaned dataset saved as FreeDB2.csv")
 print(f"🛑 Removed {len(df) - len(filtered_df)} rows due to outliers.")
 ```
 
@@ -164,10 +164,10 @@ def preprocess_data(df):
 ---
 
 ## **Key Takeaways**
-✅ **Real-time data collection**: Captures keystroke press/release timestamps dynamically.  
-✅ **Raw data storage**: Saves keypress data in `FreeDB_Raw.csv`.  
-✅ **Feature extraction**: Computes **DU, DD, UD, UU** timing metrics for training.  
-✅ **Filtering and normalization**: Ensures clean and consistent input for the model.  
+ **Real-time data collection**: Captures keystroke press/release timestamps dynamically.  
+ **Raw data storage**: Saves keypress data in `FreeDB_Raw.csv`.  
+ **Feature extraction**: Computes **DU, DD, UD, UU** timing metrics for training.  
+ **Filtering and normalization**: Ensures clean and consistent input for the model.  
 
 This process ensures that **every user's keystroke session is properly collected, structured, and processed** before being used in model training or authentication. 🚀
 
@@ -226,7 +226,7 @@ session_features.columns = ["participant", "session"] + [f"{col}_{stat}" for col
 # Save session-based feature set
 session_features.to_csv("session_features.csv", index=False)
 
-print(f"✅ Session-based feature extraction complete. Features saved to session_features.csv.")
+print(f" Session-based feature extraction complete. Features saved to session_features.csv.")
 ```
 
 ### **1.2 Example of Extracted Features (`session_features.csv`)**
@@ -250,7 +250,7 @@ user_profiles = session_features.groupby("participant").mean().reset_index()
 
 # Save user-level embeddings
 user_profiles.to_csv("user_profiles.csv", index=False)
-print(f"✅ User profile embeddings generated and saved to user_profiles.csv.")
+print(f" User profile embeddings generated and saved to user_profiles.csv.")
 ```
 
 ### **2.1 Example of Aggregated User Features (`user_profiles.csv`)**
@@ -279,7 +279,7 @@ user_embeddings = user_profiles[feature_columns].values
 # Save as numpy file for fast access
 np.save("user_features.npy", user_embeddings)
 
-print(f"✅ User feature embeddings saved as user_features.npy")
+print(f" User feature embeddings saved as user_features.npy")
 ```
 
 ---
@@ -306,9 +306,9 @@ prediction = siamese_model.predict([new_session_features, user_embeddings])
 
 # Authentication Decision
 if prediction.max() > 0.7:
-    print(f"✅ User authenticated! Confidence: {prediction.max():.2f}")
+    print(f" User authenticated! Confidence: {prediction.max():.2f}")
 else:
-    print("❌ Authentication failed. User typing pattern does not match.")
+    print(" Authentication failed. User typing pattern does not match.")
 ```
 
 ---
@@ -324,10 +324,10 @@ else:
 ---
 
 ## **Key Takeaways**
-✅ **Extracts key typing patterns** (mean & std of DU, DD, UD, UU).  
-✅ **Aggregates user behavior** across sessions for robustness.  
-✅ **Stores embeddings efficiently** using `.npy` format.  
-✅ **Facilitates fast authentication** using precomputed user embeddings.  
+ **Extracts key typing patterns** (mean & std of DU, DD, UD, UU).  
+ **Aggregates user behavior** across sessions for robustness.  
+ **Stores embeddings efficiently** using `.npy` format.  
+ **Facilitates fast authentication** using precomputed user embeddings.  
 
 This structured feature extraction ensures that **each user has a unique, stable, and machine-learning-friendly representation** of their typing behavior. 🚀
 
@@ -393,7 +393,7 @@ for user in range(num_users):
 pairs = np.array(positive_pairs + negative_pairs)
 labels = np.array(labels)
 
-print(f"✅ Training pairs generated: {len(pairs)}")
+print(f" Training pairs generated: {len(pairs)}")
 ```
 
 ---
@@ -485,7 +485,7 @@ siamese_model.fit([pairs[:, 0], pairs[:, 1]], labels, batch_size=16, epochs=20, 
 # Save trained model
 siamese_model.save("siamese_model.keras")
 
-print("✅ Model training complete. Saved as siamese_model.keras")
+print(" Model training complete. Saved as siamese_model.keras")
 ```
 
 ---
@@ -507,8 +507,8 @@ accuracy = accuracy_score(labels, predictions)
 precision = precision_score(labels, predictions)
 recall = recall_score(labels, predictions)
 
-print(f"✅ Model Accuracy: {accuracy:.2f}")
-print(f"✅ Precision: {precision:.2f}, Recall: {recall:.2f}")
+print(f" Model Accuracy: {accuracy:.2f}")
+print(f" Precision: {precision:.2f}, Recall: {recall:.2f}")
 ```
 
 ---
@@ -525,10 +525,10 @@ print(f"✅ Precision: {precision:.2f}, Recall: {recall:.2f}")
 ---
 
 ## **Key Takeaways**
-✅ **Learns user-specific keystroke patterns**.  
-✅ **Uses positive and negative pairs to differentiate users**.  
-✅ **Trained with binary crossentropy for similarity scoring**.  
-✅ **Outputs a trained model (`siamese_model.keras`) for authentication**.  
+ **Learns user-specific keystroke patterns**.  
+ **Uses positive and negative pairs to differentiate users**.  
+ **Trained with binary crossentropy for similarity scoring**.  
+ **Outputs a trained model (`siamese_model.keras`) for authentication**.  
 
 This Siamese model is now ready to compare keystroke patterns and determine **if a user is who they claim to be**! 🚀
 
@@ -588,7 +588,7 @@ def on_release(key):
         del press_times[key_name]
 
     if key == keyboard.Key.esc:  # Stop collection when 'Esc' is pressed
-        print("\n✅ Typing session complete. Saving authentication data...")
+        print("\n Typing session complete. Saving authentication data...")
         save_keystroke_data()
         return False  # Stop listener
 
@@ -599,7 +599,7 @@ def save_keystroke_data():
         writer.writerow(["key", "press_time", "release_time"])
         writer.writerows(keystroke_events)
 
-    print(f"✅ Authentication session data saved to {auth_file}")
+    print(f" Authentication session data saved to {auth_file}")
 
 # Start recording keystrokes
 with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
@@ -649,7 +649,7 @@ feature_df = pd.DataFrame(keystroke_features, columns=["DU.key1.key1", "DD.key1.
 
 # Save extracted features for authentication
 feature_df.to_csv("authenticate_features.csv", index=False)
-print(f"✅ Extracted keystroke features saved as authenticate_features.csv")
+print(f" Extracted keystroke features saved as authenticate_features.csv")
 ```
 
 ### **2.1 Feature Format (`authenticate_features.csv`)**
@@ -688,7 +688,7 @@ auth_features[timing_columns] = scaler.transform(auth_features[timing_columns])
 # Convert to numpy array for authentication
 auth_features = auth_features.values
 
-print(f"✅ Features normalized for authentication.")
+print(f" Features normalized for authentication.")
 ```
 
 ---
@@ -717,9 +717,9 @@ predictions = siamese_model.predict([new_session_features, user_embeddings])
 # Authentication decision
 max_similarity = predictions.max()
 if max_similarity > 0.7:
-    print(f"✅ User authenticated! Confidence: {max_similarity:.2f}")
+    print(f" User authenticated! Confidence: {max_similarity:.2f}")
 else:
-    print("❌ Authentication failed. User typing pattern does not match.")
+    print(" Authentication failed. User typing pattern does not match.")
 ```
 
 ---
@@ -736,11 +736,11 @@ else:
 ---
 
 ## **Key Takeaways**
-✅ **Real-time keystroke data collection** using `pynput`.  
-✅ **Feature extraction (DU, DD, UD, UU) ensures detailed typing pattern analysis**.  
-✅ **Normalization ensures extracted features match the training scale**.  
-✅ **Siamese model compares extracted features against stored embeddings**.  
-✅ **Authentication is based on similarity scoring (threshold-based decision)**.  
+ **Real-time keystroke data collection** using `pynput`.  
+ **Feature extraction (DU, DD, UD, UU) ensures detailed typing pattern analysis**.  
+ **Normalization ensures extracted features match the training scale**.  
+ **Siamese model compares extracted features against stored embeddings**.  
+ **Authentication is based on similarity scoring (threshold-based decision)**.  
 
 This system ensures **secure and accurate user authentication** based on their **typing behavior**! 🚀
 # **Frequently Asked Questions (FAQ)**  

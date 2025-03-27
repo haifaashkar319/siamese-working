@@ -14,7 +14,7 @@ def l1_distance(vects):
 
 # Load the model and features
 try:
-    print("📥 Loading model and training features...")
+    print(" Loading model and training features...")
     siamese_model = load_model(
         "models/siamese_model.keras",
         custom_objects={"l1_distance": l1_distance},
@@ -24,9 +24,9 @@ try:
     df_features = pd.read_csv("features.csv", index_col="session")
     training_features = df_features.values
     sessions = df_features.index.tolist()
-    print("✅ Model and training features loaded successfully!")
+    print(" Model and training features loaded successfully!")
 except Exception as e:
-    print(f"❌ Error loading model or training features: {e}")
+    print(f" Error loading model or training features: {e}")
     exit()
 
 def group_sessions_by_user(sessions):
@@ -71,7 +71,7 @@ def run_similarity_tests(num_tests=100):
         sample2 = df_features.loc[sess_pair[1]].values.reshape(1, -1)
         similarity = siamese_model.predict([sample1, sample2], verbose=0)[0][0]
         true_scores.append(similarity)
-        print(f"✅ True Test #{i+1} → Sessions: {sess_pair[0]} vs {sess_pair[1]} | Similarity Score: {similarity:.3f}")
+        print(f" True Test #{i+1} → Sessions: {sess_pair[0]} vs {sess_pair[1]} | Similarity Score: {similarity:.3f}")
     
     print(f"\n🔎 Running {num_tests} False Tests (Different Users)")
     false_scores = []
@@ -86,7 +86,7 @@ def run_similarity_tests(num_tests=100):
         sample2 = df_features.loc[sess2].values.reshape(1, -1)
         similarity = siamese_model.predict([sample1, sample2], verbose=0)[0][0]
         false_scores.append(similarity)
-        print(f"❌ False Test #{i+1} → Sessions: {sess1} (User: {users[0]}) vs {sess2} (User: {users[1]}) | Similarity Score: {similarity:.3f}")
+        print(f" False Test #{i+1} → Sessions: {sess1} (User: {users[0]}) vs {sess2} (User: {users[1]}) | Similarity Score: {similarity:.3f}")
     
     # Combine scores and assign labels: 1 for same-user, 0 for different-user.
     all_scores = np.concatenate([true_scores, false_scores])
@@ -99,7 +99,7 @@ def run_similarity_tests(num_tests=100):
     optimal_index = np.nanargmin(abs_diffs)
     optimized_threshold = thresholds[optimal_index]
     
-    print("\n📊 Similarity Score Summary")
+    print("\n Similarity Score Summary")
     print(f"Mean True Score (Same User): {np.mean(true_scores):.3f} "
           f"({similarity_to_percentage(np.mean(true_scores)):.2f}%)")
     print(f"Mean False Score (Different Users): {np.mean(false_scores):.3f} "
@@ -124,7 +124,7 @@ def run_sanity_check(optimized_threshold):
     session_ids = [s.strip() for s in input_ids.split(",")]
     
     if len(session_ids) < 2:
-        print("❌ Please enter at least 2 session IDs.")
+        print(" Please enter at least 2 session IDs.")
         return
 
     print("\n🔍 Running Manual Sanity Check on Selected Sessions:")
@@ -133,7 +133,7 @@ def run_sanity_check(optimized_threshold):
             sample1 = df_features.loc[session_ids[i]].values.reshape(1, -1)
             sample2 = df_features.loc[session_ids[i+1]].values.reshape(1, -1)
         except KeyError as e:
-            print(f"❌ Session ID not found: {e}")
+            print(f" Session ID not found: {e}")
             continue
 
         similarity = siamese_model.predict([sample1, sample2], verbose=0)[0][0]
