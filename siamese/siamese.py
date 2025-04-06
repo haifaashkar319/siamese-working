@@ -24,12 +24,14 @@ class CosineSimilarity(layers.Layer):
     def get_config(self):
         return super().get_config()
 
-def contrastive_loss(margin=1.0):
-    def loss(y_true, y_pred):
-        square_pred = K.square(y_pred)
-        margin_square = K.square(K.maximum(margin - y_pred, 0))
-        return K.mean(y_true * square_pred + (1 - y_true) * margin_square)
-    return loss
+def contrastive_loss(y_true, y_pred, margin=1.0, same_user_weight=2.0):
+    """Modified contrastive loss with higher weight for same-user pairs"""
+    square_pred = K.square(y_pred)
+    margin_square = K.square(K.maximum(margin - y_pred, 0))
+    
+    # Increase weight for same-user pairs
+    weighted_y_true = K.cast(y_true, "float32") * same_user_weight
+    return K.mean(weighted_y_true * square_pred + (1 - y_true) * margin_square)
 
 def triplet_loss(margin=1.0):
     def loss(y_true, y_pred):
@@ -57,7 +59,7 @@ class SiameseNetwork:
         """
         self.base_model = base_model
         self.head_model = head_model
-        self.loss_type = 'binary_crossentropy'  # Force binary_crossentropy
+        self.loss_type = loss_type   # Force binary_crossentropy
         self.input_shape = self.base_model.input_shape[1:]
         self.siamese_model = None
         self.__initialize_siamese_model()
