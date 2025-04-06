@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import euclidean_distances
+from scipy.stats import skew, kurtosis
 
 ### ----------------------- Data Loading & Validation -----------------------
 
@@ -75,50 +76,68 @@ def extract_features_for_session(df):
 
 def extract_pause_features(group, thresholds):
     """
-    Identify rows that are considered pauses.
-    A row is flagged as a pause if all 4 specified columns are out-of-range
-    based on the percentile thresholds.
-    Returns a dictionary of pause stats and a subset of the group with pause rows removed.
+    Identify rows that are considered pauses with improved NaN handling
     """
     pause_cols = ["DD.key1.key2", "DU.key1.key2", "UD.key1.key2", "UU.key1.key2"]
+    
+    # Clean and convert data first
     for col in pause_cols:
         group[col] = pd.to_numeric(group[col], errors="coerce")
     
     def is_pause(row):
         count = 0
+        valid_cols = 0
         for col in pause_cols:
-            lower, upper = thresholds[col]
-            val = row[col]
-            if pd.notna(val) and (val < lower or val > upper):
-                count += 1
-        # Flag as pause only if all 4 columns are out-of-range
-        return count >= 4
+            if pd.notna(row[col]):  # Only count valid columns
+                valid_cols += 1
+                lower, upper = thresholds[col]
+                if row[col] < lower or row[col] > upper:
+                    count += 1
+        # Flag as pause if all valid columns are out-of-range
+        return valid_cols > 0 and count == valid_cols
     
     pause_mask = group.apply(is_pause, axis=1)
     pause_count = pause_mask.sum()
     total_count = len(group)
-    # Use pause_ratio for further interpretation (but not printed in feature vector)
     pause_ratio = pause_count / total_count if total_count > 0 else 0
     
     if pause_count > 0:
-        avg_pause = group.loc[pause_mask, "DD.key1.key2"].mean()
-        std_pause = group.loc[pause_mask, "DD.key1.key2"].std()
+        pause_data = group.loc[pause_mask, "DD.key1.key2"]
+        valid_pauses = pause_data.dropna()
+        
+        if len(valid_pauses) > 0:
+            avg_pause = valid_pauses.mean()
+            std_pause = valid_pauses.std() if len(valid_pauses) > 1 else 0
+        else:
+            avg_pause = 0
+            std_pause = 0
     else:
         avg_pause = 0
         std_pause = 0
-
+    
+    # Replace NaN with 0 for consistency
+    avg_pause = 0 if pd.isna(avg_pause) else avg_pause
+    std_pause = 0 if pd.isna(std_pause) else std_pause
+    
+    
     group_active = group[~pause_mask].copy()
     
-    return {
+    pause_features = {
         "pause_ratio": pause_ratio,
         "avg_pause": avg_pause,
         "std_pause": std_pause
-    }, group_active
+    }
+    
+    # Validate features before returning
+    for k, v in pause_features.items():
+        if pd.isna(v):
+            print(f"Warning: NaN detected in {k}")
+            pause_features[k] = 0
+    
+    return pause_features, group_active
 
 def extract_keystroke_features(group):
-    """
-    Compute standard keystroke features for a given session (ignoring pause rows).
-    """
+    """Enhanced feature extraction with more sophisticated statistics"""
     timing_columns = ["DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"]
     for col in timing_columns:
         group[col] = pd.to_numeric(group[col], errors="coerce")
@@ -127,35 +146,33 @@ def extract_keystroke_features(group):
     if len(group) < 3:
         return {}
     
-    return {
-        "avg_dwell_time":   np.mean(group["DU.key1.key1"]),
-        "std_dwell_time":   np.std(group["DU.key1.key1"]),
-        "avg_flight_time":  np.mean(group["DD.key1.key2"]),
-        "std_flight_time":  np.std(group["DD.key1.key2"]),
-        "avg_latency":      np.mean(group["UD.key1.key2"]) if "UD.key1.key2" in group.columns else 0,
-        "std_latency":      np.std(group["UD.key1.key2"])  if "UD.key1.key2" in group.columns else 0,
-        "avg_UU_time":      np.mean(group["UU.key1.key2"]) if "UU.key1.key2" in group.columns else 0,
-        "std_UU_time":      np.std(group["UU.key1.key2"])  if "UU.key1.key2" in group.columns else 0
-    }
-
-def create_training_pairs(features_by_session):
-    """
-    Create training pairs from the dictionary of features_by_session.
-    """
-    pairs = []
-    labels = []
-    users = list(set(k.split('_s')[0] for k in features_by_session.keys()))
-    for user in users:
-        user_sessions = [k for k in features_by_session.keys() if k.startswith(user)]
-        for i in range(len(user_sessions)):
-            for j in range(i + 1, len(user_sessions)):
-                vec1 = np.array(list(features_by_session[user_sessions[i]].values()), dtype=np.float32)
-                vec2 = np.array(list(features_by_session[user_sessions[j]].values()), dtype=np.float32)
-                pairs.append((vec1, vec2))
-                labels.append(1)
-    pairs = np.array(pairs)
-    labels = np.array(labels)
-    return pairs, labels
+    features = {}
+    
+    # Basic statistics for each timing column
+    for col in timing_columns:
+        if col in group.columns:
+            values = group[col].values
+            features.update({
+                f"avg_{col}": np.mean(values),
+                f"std_{col}": np.std(values),
+                f"med_{col}": np.median(values),
+                f"skew_{col}": skew(values),
+                f"kurt_{col}": kurtosis(values),
+                f"q25_{col}": np.percentile(values, 25),
+                f"q75_{col}": np.percentile(values, 75),
+                f"iqr_{col}": np.percentile(values, 75) - np.percentile(values, 25)
+            })
+    
+    # Rhythm features (time differences between consecutive keystrokes)
+    if "DD.key1.key2" in group.columns:
+        diffs = np.diff(group["DD.key1.key2"].values)
+        features.update({
+            "rhythm_mean": np.mean(diffs),
+            "rhythm_std": np.std(diffs),
+            "rhythm_max": np.max(np.abs(diffs))
+        })
+    
+    return features
 
 ### ----------------------- Standardization Function -----------------------
 
@@ -171,6 +188,27 @@ def standardize_features(features_by_session):
         row.update(feats)
         session_list.append(row)
     df_features = pd.DataFrame(session_list)
+    
+    # Save raw features before standardization
+    print("\nSaving raw features before standardization...")
+    df_features.to_csv('raw_features_before_std.csv', index=False)
+    print("Raw features saved to 'raw_features_before_std.csv'")
+
+    # Save detailed feature information
+    with open('feature_analysis.txt', 'w') as f:
+        f.write("=== Pre-Standardization Feature Analysis ===\n\n")
+        f.write("Basic Statistics:\n")
+        f.write(df_features.describe().to_string())
+        f.write("\n\nFeature Value Ranges:\n")
+        for col in df_features.columns:
+            if col != 'session':
+                f.write(f"\n{col}:\n")
+                f.write(f"  Min: {df_features[col].min()}\n")
+                f.write(f"  Max: {df_features[col].max()}\n")
+                f.write(f"  Mean: {df_features[col].mean()}\n")
+                f.write(f"  Std: {df_features[col].std()}\n")
+                f.write(f"  NaN count: {df_features[col].isna().sum()}\n")
+
     df_features.set_index("session", inplace=True)
     
     # Select numeric columns to scale
@@ -215,20 +253,12 @@ if __name__ == "__main__":
     # Extract features per session using per-user percentile-based thresholds
     features = extract_features_for_session(df)
     
-    # Save features to CSV (optional) and print them
-    # (Uncomment the following line if you want to save to CSV)
-    # save_features_to_csv(features, output_file="features.csv")
-    
-    
     # Standardize the features
     df_scaled = standardize_features(features)
     print("\nFirst 5 Standardized Feature Vectors:")
     print(df_scaled.head(5))
     df_scaled.to_csv("features.csv")
     print("\nStandardized features saved to features.csv")
-    
-    # Create training pairs
-    pairs, labels = create_training_pairs(features)
     
     # For evaluation, create lists of true pairs and false pairs manually.
     # True pairs: sessions from the same participant.
