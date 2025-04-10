@@ -1,6 +1,6 @@
 import numpy as np
 
-def find_optimal_threshold_from_roc(fpr, tpr, thresholds, min_threshold=0.65, max_threshold=0.75):
+def find_optimal_threshold_from_roc(fpr, tpr, thresholds, min_threshold=0.3, max_threshold=0.8):
     """Adjusted threshold range to improve TPR"""
     thresholds = np.array([float(t) if t != "Infinity" else np.inf for t in thresholds])
     j_scores = tpr - fpr

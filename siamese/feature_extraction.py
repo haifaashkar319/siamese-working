@@ -209,6 +209,48 @@ def debug_feature_separation(pairs, users):
     else:
         print("Only one user or one pair found; cannot compare negative pair distances.")
 
+def analyze_feature_correlations(features_by_session):
+    """
+    Analyze and visualize correlations between features
+    """
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    
+    # Convert features dictionary to DataFrame
+    feature_list = []
+    for session, feats in features_by_session.items():
+        feature_list.append(feats)
+    df_features = pd.DataFrame(feature_list)
+    
+    # Compute correlation matrix
+    corr_matrix = df_features.corr()
+    
+    # Find highly correlated feature pairs (correlation > 0.8)
+    high_corr_pairs = []
+    for i in range(len(corr_matrix.columns)):
+        for j in range(i):
+            if abs(corr_matrix.iloc[i, j]) > 0.8:
+                high_corr_pairs.append((
+                    corr_matrix.columns[i],
+                    corr_matrix.columns[j],
+                    corr_matrix.iloc[i, j]
+                ))
+    
+    # Print highly correlated features
+    print("\nHighly correlated features (|correlation| > 0.8):")
+    for feat1, feat2, corr in sorted(high_corr_pairs, key=lambda x: abs(x[2]), reverse=True):
+        print(f"{feat1} - {feat2}: {corr:.3f}")
+    
+    # Create correlation heatmap
+    plt.figure(figsize=(12, 10))
+    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0)
+    plt.title('Feature Correlation Matrix')
+    plt.tight_layout()
+    plt.savefig('feature_correlations.png')
+    plt.close()
+    
+    return high_corr_pairs
+
 # Example usage (this part would typically be in your main script)
 if __name__ == "__main__":
     # Load the CSV file (adjust file path if needed)
@@ -221,6 +263,9 @@ if __name__ == "__main__":
     
     # Extract features per session using per-user dynamic thresholds
     features = extract_features_for_session(df)
+    
+    # Analyze feature correlations
+    high_corr_pairs = analyze_feature_correlations(features)
     
     print("\nExtracted features by session:")
     for session, feats in features.items():

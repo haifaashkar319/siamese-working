@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import euclidean_distances
 from scipy.stats import skew, kurtosis
 
@@ -18,6 +19,20 @@ def load_data(file_path="FreeDB2.csv"):
     df.columns = df.columns.str.strip()  # Clean column names
     return df
 
+def check_session_entries(df):
+    """
+    Print the number of entries per session for each participant.
+    """
+    print("\n=== Session Entry Count Validation ===")
+    for participant, user_df in df.groupby("participant"):
+        print(f"\nParticipant: {participant}")
+        session_counts = user_df.groupby("session").size()
+        print("Sessions and their entry counts:")
+        for session, count in session_counts.items():
+            print(f"Session {session}: {count} entries")
+        print(f"Total sessions: {len(session_counts)}")
+        print(f"Average entries per session: {session_counts.mean():.2f}")
+
 def validate_data(df):
     """
     Ensure required columns exist and perform basic checks.
@@ -26,6 +41,9 @@ def validate_data(df):
     if not required_columns.issubset(df.columns):
         missing_cols = required_columns - set(df.columns)
         raise KeyError(f"❌ Missing required columns: {missing_cols}")
+    
+    # Add session entry validation
+    check_session_entries(df)
     return df
 
 ### ----------------------- Percentile-Based Thresholds (Per User) -----------------------
@@ -119,7 +137,6 @@ def extract_pause_features(group, thresholds):
     avg_pause = 0 if pd.isna(avg_pause) else avg_pause
     std_pause = 0 if pd.isna(std_pause) else std_pause
     
-    
     group_active = group[~pause_mask].copy()
     
     pause_features = {
@@ -174,12 +191,39 @@ def extract_keystroke_features(group):
     
     return features
 
+### ----------------------- PCA Function -----------------------
+
+def apply_pca(features_matrix, n_components=0.95):
+    """
+    Apply PCA to reduce feature dimensionality while retaining specified variance.
+    
+    Args:
+        features_matrix: Standardized feature matrix
+        n_components: Either float (0-1) for variance retention or int for specific number of components
+    
+    Returns:
+        transformed_features: PCA-transformed features
+        pca: Fitted PCA object
+    """
+    pca = PCA(n_components=n_components)
+    transformed_features = pca.fit_transform(features_matrix)
+    
+    # Print variance explanation analysis
+    print("\n=== PCA Analysis ===")
+    print(f"Number of components: {pca.n_components_}")
+    print(f"Total variance explained: {sum(pca.explained_variance_ratio_):.4f}")
+    print("\nComponent-wise explained variance ratio:")
+    for i, ratio in enumerate(pca.explained_variance_ratio_):
+        print(f"Component {i+1}: {ratio:.4f}")
+    
+    return transformed_features, pca
+
 ### ----------------------- Standardization Function -----------------------
 
 def standardize_features(features_by_session):
     """
-    Convert the features dictionary into a DataFrame, standardize numeric features using StandardScaler,
-    and return the standardized DataFrame.
+    Convert the features dictionary into a DataFrame, standardize numeric features,
+    apply PCA, and return the transformed DataFrame.
     """
     # Convert the dictionary to a DataFrame (session as index)
     session_list = []
@@ -214,10 +258,19 @@ def standardize_features(features_by_session):
     # Select numeric columns to scale
     numeric_cols = df_features.columns
     scaler = StandardScaler()
-    df_scaled = pd.DataFrame(scaler.fit_transform(df_features[numeric_cols]),
-                             columns=numeric_cols,
-                             index=df_features.index)
-    return df_scaled
+    scaled_features = scaler.fit_transform(df_features[numeric_cols])
+    
+    # Apply PCA
+    transformed_features, pca = apply_pca(scaled_features)
+    
+    # Create DataFrame with transformed features
+    df_transformed = pd.DataFrame(
+        transformed_features,
+        index=df_features.index,
+        columns=[f'PC{i+1}' for i in range(transformed_features.shape[1])]
+    )
+    
+    return df_transformed
 
 ### ----------------------- Distance Calculation -----------------------
 
