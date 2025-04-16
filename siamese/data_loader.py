@@ -229,7 +229,7 @@ def apply_pca(features_matrix, n_components=0.95):
 def standardize_features(features_by_session):
     """
     Convert the features dictionary into a DataFrame, standardize numeric features,
-    apply PCA, and return the transformed DataFrame.
+    and return the transformed DataFrame with original feature names.
     """
     # Convert the dictionary to a DataFrame (session as index)
     session_list = []
@@ -266,17 +266,15 @@ def standardize_features(features_by_session):
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(df_features[numeric_cols])
     
-    # Apply PCA
-    transformed_features, pca = apply_pca(scaled_features)
-    
-    # Create DataFrame with transformed features
-    df_transformed = pd.DataFrame(
-        transformed_features,
+    # Create DataFrame with scaled features (before PCA)
+    df_scaled = pd.DataFrame(
+        scaled_features,
         index=df_features.index,
-        columns=[f'PC{i+1}' for i in range(transformed_features.shape[1])]
+        columns=numeric_cols  # Keep original feature names for scaled data
     )
     
-    return df_transformed
+    # Save scaled features with original names
+    return df_scaled
 
 ### ----------------------- Distance Calculation -----------------------
 
