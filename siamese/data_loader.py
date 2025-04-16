@@ -9,14 +9,31 @@ from scipy.stats import skew, kurtosis
 
 ### ----------------------- Data Loading & Validation -----------------------
 
-def load_data(file_path="FreeDB2.csv"):
+def load_and_clean_data(file_path="FreeDB2.csv"):
     """
-    Load the keystroke dataset from a CSV file.
-    Make sure the CSV is in the same directory or provide an absolute path.
+    Load and clean the keystroke dataset.
+    Combines loading and cleaning steps from all files.
     """
     file_path = os.path.join(os.path.dirname(__file__), file_path)
     df = pd.read_csv(file_path, low_memory=False)
-    df.columns = df.columns.str.strip()  # Clean column names
+    df.columns = df.columns.str.strip()
+
+    timing_columns = ["DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"]
+    
+    # Convert to numeric
+    for col in timing_columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Drop NaN values and apply filters
+    df = df.dropna(subset=timing_columns)
+    df = df[
+        (df["DU.key1.key1"].between(0.03, 3.0)) &
+        (df["DD.key1.key2"].between(-0.3, 5.0)) &
+        (df["UD.key1.key2"].between(-0.5, 4.0)) &
+        (df["UU.key1.key2"].between(0.0, 5.0))
+    ]
+    
     return df
 
 def check_session_entries(df):
@@ -66,35 +83,29 @@ def get_user_percentile_thresholds(user_df, columns, lower_pct=0.01, upper_pct=0
 
 def extract_features_for_session(df):
     """
-    Extract features for each (participant, session) group.
-    Uses per-user percentile-based thresholds for pause detection.
-    Rows flagged as pauses (all 4 out-of-range among selected columns) are excluded
-    from keystroke feature calculations.
-    Returns a dictionary where each key is a session identifier and each value is a dict of features.
+    Enhanced feature extraction combining best features from all files.
     """
     features_by_session = {}
     pause_cols = ["DD.key1.key2", "DU.key1.key2", "UD.key1.key2", "UU.key1.key2"]
     
-    # For each participant, compute percentile thresholds, then process each session
     for participant, user_df in df.groupby("participant"):
-        user_thresholds = get_user_percentile_thresholds(user_df.copy(), pause_cols, lower_pct=0.01, upper_pct=0.99)
+        user_thresholds = get_user_percentile_thresholds(user_df.copy(), pause_cols)
+        
         for session, group in user_df.groupby("session"):
             if len(group) < 3:
                 continue
             
-            # Identify pause rows and remove them
             pause_stats, group_active = extract_pause_features(group.copy(), user_thresholds)
-            # Compute keystroke features on the active (non-pause) rows
             active_features = extract_keystroke_features(group_active)
-            # Merge features into one dictionary
             features = {**active_features, **pause_stats}
             session_key = f"{participant}_s{session}"
             features_by_session[session_key] = features
+    
     return features_by_session
 
 def extract_pause_features(group, thresholds):
     """
-    Identify rows that are considered pauses with improved NaN handling
+    Identify rows that are considered pauses with improved NaN handling.
     """
     pause_cols = ["DD.key1.key2", "DU.key1.key2", "UD.key1.key2", "UU.key1.key2"]
     
@@ -154,7 +165,7 @@ def extract_pause_features(group, thresholds):
     return pause_features, group_active
 
 def extract_keystroke_features(group):
-    """Enhanced feature extraction with more sophisticated statistics"""
+    """Enhanced feature extraction with most important metrics."""
     timing_columns = ["DU.key1.key1", "DD.key1.key2", "UD.key1.key2", "UU.key1.key2"]
     for col in timing_columns:
         group[col] = pd.to_numeric(group[col], errors="coerce")
@@ -165,7 +176,7 @@ def extract_keystroke_features(group):
     
     features = {}
     
-    # Basic statistics for each timing column
+    # Most important statistics for each timing column
     for col in timing_columns:
         if col in group.columns:
             values = group[col].values
@@ -173,20 +184,15 @@ def extract_keystroke_features(group):
                 f"avg_{col}": np.mean(values),
                 f"std_{col}": np.std(values),
                 f"med_{col}": np.median(values),
-                f"skew_{col}": skew(values),
-                f"kurt_{col}": kurtosis(values),
-                f"q25_{col}": np.percentile(values, 25),
-                f"q75_{col}": np.percentile(values, 75),
                 f"iqr_{col}": np.percentile(values, 75) - np.percentile(values, 25)
             })
     
-    # Rhythm features (time differences between consecutive keystrokes)
+    # Add rhythm features
     if "DD.key1.key2" in group.columns:
         diffs = np.diff(group["DD.key1.key2"].values)
         features.update({
             "rhythm_mean": np.mean(diffs),
-            "rhythm_std": np.std(diffs),
-            "rhythm_max": np.max(np.abs(diffs))
+            "rhythm_std": np.std(diffs)
         })
     
     return features
@@ -300,7 +306,7 @@ def calculate_pair_distances(df_scaled, true_pairs, false_pairs):
 
 if __name__ == "__main__":
     # Load and validate data
-    df = load_data("FreeDB2.csv")
+    df = load_and_clean_data("FreeDB2.csv")
     df = validate_data(df)
     
     # Extract features per session using per-user percentile-based thresholds
